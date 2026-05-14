@@ -35,6 +35,8 @@ from schemas import (
 )
 
 logger = logging.getLogger("decarb_web_studio")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger.info("Importing Decarb Web Studio API")
 
 app = FastAPI(
     title="Decarb Web Studio API",
@@ -147,20 +149,6 @@ def _candidate_gemini_models(primary_model: str) -> list[str]:
         if cleaned and cleaned not in candidates:
             candidates.append(cleaned)
     return candidates
-
-
-@app.on_event("startup")
-def validate_runtime_catalogs() -> None:
-    checks = {
-        "stationary_fuels": len(list_stationary_fuels()),
-        "mobile_fuels": len(list_mobile_fuels()),
-        "refrigerants": len(list_refrigerants()),
-        "electricity_suppliers_2025": len(list_electricity_suppliers(2025)),
-    }
-    missing = [name for name, count in checks.items() if count <= 0]
-    if missing:
-        raise RuntimeError(f"Catalogos vacios o no disponibles: {', '.join(missing)}")
-    logger.info("Runtime catalogs loaded: %s", checks)
 
 
 @app.get("/health", response_model=ApiEnvelope)
