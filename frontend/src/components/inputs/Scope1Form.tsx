@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { CatalogItem, CompanyInputs, FootprintResult } from "../../types";
 
-const COMMON_STATIONARY_LABELS = new Set(["Gasóleo C", "Gasóleo B", "Gas natural", "Fuelóleo", "LPG"]);
+const COMMON_STATIONARY_LABELS = new Set(["Gasóleo C", "Gasóleo B", "Gas natural", "LPG"]);
 const COMMON_MOBILE_LABELS = ["B7", "E5"];
 const HIDDEN_SECONDARY_FUEL_LABELS = new Set(["E10"]);
 const COMMON_MOBILE_DISPLAY_LABELS: Record<string, string> = {

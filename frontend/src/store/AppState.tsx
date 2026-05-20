@@ -80,8 +80,6 @@ const initialState: AppState = {
   financialParams: {
     discount_rate: 0.08,
     horizon: 8,
-    co2_price: 80,
-    confidence_floor: 1,
     max_payback_years: null,
   },
   currentStep: "empresa",

@@ -119,25 +119,17 @@ export interface Initiative {
   annual_co2_reduction_t: number | null;
   implementation_months: number;
   strategic_score_1_5: number;
-  confidence_0_1: number;
-  mrv_method: string;
-  normative_reference: string;
-  notes: string;
   activity_unit?: string;
   categoria?: string;
   selected?: boolean;
   npv_eur?: number | null;
-  npv_penalized_eur?: number | null;
   payback_years?: number | null;
   total_annual_benefit_eur?: number | null;
-  co2_value_eur_year?: number | null;
 }
 
 export interface FinancialParams {
   discount_rate: number;
   horizon: number;
-  co2_price: number;
-  confidence_floor: number;
   max_payback_years?: number | null;
 }
 

@@ -93,7 +93,6 @@ function toCsv(rows: Initiative[]) {
     "annual_opex_saving_eur",
     "payback_years",
     "npv_eur",
-    "npv_penalized_eur",
     "selected",
   ];
   const lines = [
@@ -380,7 +379,7 @@ export function PortfolioOptimizer({
                               ? `${formatNumber(initiative.payback_years, 1)} años`
                               : "N/D"}
                           </td>
-                          <td>{formatCurrency(initiative.npv_eur ?? initiative.npv_penalized_eur)}</td>
+                          <td>{formatCurrency(initiative.npv_eur)}</td>
                           <td>{costPerTon(initiative) === null ? "N/D" : `${formatCurrency(costPerTon(initiative))}/t`}</td>
                         </tr>
                       ))}

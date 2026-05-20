@@ -378,9 +378,6 @@ export default function Tool() {
                       ? Number(item.strategic_score_1_5)
                       : 3,
                     npv_eur: Number.isFinite(Number(item.npv_eur)) ? Number(item.npv_eur) : 0,
-                    npv_penalized_eur: Number.isFinite(Number(item.npv_penalized_eur))
-                      ? Number(item.npv_penalized_eur)
-                      : 0,
                   }));
                   const result = await optimizePortfolio(
                     cleanedMetrics,

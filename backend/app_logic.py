@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import math
@@ -36,17 +36,10 @@ REQUIRED_COLUMNS = [
     "annual_co2_reduction_t",
     "implementation_months",
     "strategic_score_1_5",
-    "confidence_0_1",
-    "mrv_method",
-    "normative_reference",
-    "notes",
 ]
 
 OPTIONAL_COLUMNS = [
     "activity_unit",
-    "required_info",
-    "provided_info",
-    "data_dependency",
     "categoria",
     "priority_weight",
     "co2_adjusted_t",
@@ -61,7 +54,6 @@ NUMERIC_COLUMNS = [
     "annual_co2_reduction_t",
     "implementation_months",
     "strategic_score_1_5",
-    "confidence_0_1",
     "priority_weight",
     "co2_adjusted_t",
 ]
@@ -984,6 +976,7 @@ def _build_ai_web_research_context(
     api_key: str,
     model: str,
     purpose: str,
+    require_web_research: bool = False,
 ) -> Dict[str, Any]:
     company_name = str(company.get("company_name") or "").strip()
     sector = str(company.get("sector") or company.get("cnae_sector") or "").strip()
@@ -1024,16 +1017,30 @@ def _build_ai_web_research_context(
             system_prompt,
             user_prompt,
             use_web_research=True,
-            require_web_research=False,
+            require_web_research=require_web_research,
             json_shape_hint='{"company_activity":["..."],"location_market":["..."],"sustainability_energy":["..."],"regulation_aid_risks":["..."],"research_limitations":["..."]}',
         )
     except Exception as exc:
+        if require_web_research:
+            raise
         return {
             "data": {"research_limitations": [f"No se pudo completar la investigación web previa: {exc}"]},
             "grounding_used": False,
             "grounding_queries": [],
             "grounding_sources": [],
         }
+
+
+def _extract_initiative_list(data: Any) -> List[Dict[str, Any]]:
+    if isinstance(data, dict):
+        for key in ["initiatives", "iniciativas", "items", "data"]:
+            value = data.get(key)
+            if isinstance(value, list):
+                data = value
+                break
+    if not isinstance(data, list):
+        raise RuntimeError("La salida de Gemini para iniciativas debe ser una lista JSON.")
+    return [item for item in data if isinstance(item, dict)]
 
 
 def generate_ai_pestel(company: Dict[str, Any], footprint: Dict[str, Any], api_key: str, model: str) -> Dict[str, Any]:
@@ -1195,37 +1202,6 @@ def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def parse_semicolon_list(value: Any) -> List[str]:
-    if value is None or (isinstance(value, float) and np.isnan(value)):
-        return []
-    return [item.strip() for item in str(value).split(";") if item.strip()]
-
-
-def infer_confidence_row(row: pd.Series) -> float:
-    direct = row.get("confidence_0_1")
-    if pd.notna(direct):
-        return float(np.clip(direct, 0.0, 1.0))
-    required = set(parse_semicolon_list(row.get("required_info", "")))
-    provided = set(parse_semicolon_list(row.get("provided_info", "")))
-    if not required:
-        return 0.55
-    ratio = len(required.intersection(provided)) / max(1, len(required))
-    dependency = str(row.get("data_dependency", "medium")).lower()
-    if dependency == "high":
-        ratio *= 0.85
-    elif dependency == "low":
-        ratio = min(1.0, ratio * 1.05)
-    return float(np.clip(ratio, 0.15, 1.0))
-
-
-def apply_confidence_penalty(value: float, confidence: float, floor: float = 0.4) -> float:
-    if pd.isna(value):
-        return np.nan
-    c = min(1.0, max(0.0, confidence if not pd.isna(confidence) else floor))
-    multiplier = floor + (1.0 - floor) * c
-    return float(value) * multiplier
-
-
 def _implemented_status(company: Dict[str, Any], label: str) -> str:
     implemented = company.get("implemented_measures") or {}
     raw = str(implemented.get(label, "No")).strip().lower()
@@ -1279,7 +1255,6 @@ def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: in
     df["tiempo_implementacion"] = df["implementation_months"]
     df["annual_co2_reduction_t"] = pd.to_numeric(df["annual_co2_reduction_t"], errors="coerce").fillna(0.0)
     df["co2_adjusted_t"] = df["annual_co2_reduction_t"] * pd.to_numeric(df["priority_weight"], errors="coerce").fillna(1.0)
-    df["confidence_0_1"] = df.apply(infer_confidence_row, axis=1)
     df["strategic_score_1_5"] = pd.to_numeric(df["strategic_score_1_5"], errors="coerce").fillna(3.0).clip(1.0, 5.0)
     df["capex_eur"] = pd.to_numeric(df["capex_eur"], errors="coerce").fillna(0.0)
     df["annual_opex_saving_eur"] = pd.to_numeric(df["annual_opex_saving_eur"], errors="coerce")
@@ -1287,8 +1262,7 @@ def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: in
     for idx, _ in enumerate(df.index, start=1):
         df.at[df.index[idx - 1], "id"] = idx
     first_cols = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
-    remaining = [col for col in df.columns if col not in first_cols]
-    return df[first_cols + remaining].head(n).reset_index(drop=True)
+    return df[first_cols].head(n).reset_index(drop=True)
 
 
 def _provided_flags(company: Dict[str, Any], mapping: Dict[str, Any]) -> List[str]:
@@ -1330,7 +1304,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             return
         if status == "partial":
             payload["initiative"] = f"Escalar: {payload['initiative']}"
-            payload["notes"] = f"{payload['notes']} La medida ya está parcialmente implantada; se propone su ampliación."
         rows.append(payload)
 
     add_if_allowed(
@@ -1345,12 +1318,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.5) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 2,
             "strategic_score_1_5": 5,
-            "mrv_method": "Facturas eléctricas, factor del proveedor, certificados GdO y kWh cubiertos",
-            "normative_reference": "MITECO Alcance 2 market-based / CNMC mix comercializadoras",
-            "notes": "Reduce CO2 de suministro sin alterar proceso; depende de trazabilidad contractual.",
-            "required_info": "annual_electricity_mwh;provider_label_or_factor;gdo_status",
-            "provided_info": ";".join(_provided_flags(company, {"annual_electricity_mwh": annual_electricity_mwh, "provider_label_or_factor": company.get("supplier_name"), "gdo_status": _to_float(company.get("gdo_coverage_pct")) > 0})),
-            "data_dependency": "high",
             "activity_unit": "kWh",
         },
     )
@@ -1367,12 +1334,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.03) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 4,
             "strategic_score_1_5": 5,
-            "mrv_method": "Submetering, facturas y comparación baseline vs post-implantación",
-            "normative_reference": "MRV operativo de eficiencia energética",
-            "notes": "Base estructural para priorizar, medir y verificar iniciativas posteriores.",
-            "required_info": "annual_electricity_mwh;main_meters;submetering_plan",
-            "provided_info": ";".join(_provided_flags(company, {"annual_electricity_mwh": annual_electricity_mwh, "main_meters": company.get("has_meters"), "submetering_plan": company.get("has_submetering")})),
-            "data_dependency": "medium",
             "activity_unit": "kWh",
         },
     )
@@ -1389,12 +1350,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.01) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 2,
             "strategic_score_1_5": 3,
-            "mrv_method": "Inventario de luminarias, facturas y submedición cuando exista",
-            "normative_reference": "Buenas prácticas de eficiencia en usos auxiliares",
-            "notes": "Quick win clásico con verificación sencilla cuando el peso de iluminación es relevante.",
-            "required_info": "lighting_inventory;operating_hours;electricity_price_eur_mwh",
-            "provided_info": ";".join(_provided_flags(company, {"electricity_price_eur_mwh": electricity_price})),
-            "data_dependency": "medium",
             "activity_unit": "kWh",
         },
     )
@@ -1411,12 +1366,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.02) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 3,
             "strategic_score_1_5": 3,
-            "mrv_method": "Inventario de motores, horas de operación y medidas de carga",
-            "normative_reference": "Buenas prácticas en accionamientos y motores",
-            "notes": "Adecuado para bombas, ventiladores y compresores con carga variable.",
-            "required_info": "motor_inventory;operating_hours;electricity_price_eur_mwh",
-            "provided_info": ";".join(_provided_flags(company, {"electricity_price_eur_mwh": electricity_price})),
-            "data_dependency": "medium",
             "activity_unit": "kWh",
         },
     )
@@ -1433,12 +1382,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "annual_co2_reduction_t": ((roof_area_m2 * 0.18 * 1400.0 / 1000.0 * 0.7) * elec_factor) if _ok_num(roof_area_m2) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 5,
             "strategic_score_1_5": 4,
-            "mrv_method": "Producción inversores, kWh autoconsumidos y facturas eléctricas",
-            "normative_reference": "Autoconsumo y reducción de Scope 2",
-            "notes": "Depende de superficie útil, perfil de carga y restricciones de conexión.",
-            "required_info": "roof_area_m2;annual_electricity_mwh;electricity_price_eur_mwh",
-            "provided_info": ";".join(_provided_flags(company, {"roof_area_m2": roof_area_m2, "annual_electricity_mwh": annual_electricity_mwh, "electricity_price_eur_mwh": electricity_price})),
-            "data_dependency": "high",
             "activity_unit": "kWh",
         },
     )
@@ -1455,12 +1398,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.01) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 2,
             "strategic_score_1_5": 2,
-            "mrv_method": "Campaña de fugas, medición en compresores y comparación de kWh",
-            "normative_reference": "Buenas prácticas de utilities industriales",
-            "notes": "Conviene confirmarlo con auditoría específica de red de aire comprimido.",
-            "required_info": "compressed_air_kwh;leak_rate;electricity_price_eur_mwh",
-            "provided_info": ";".join(_provided_flags(company, {"electricity_price_eur_mwh": electricity_price})),
-            "data_dependency": "high",
             "activity_unit": "kWh",
         },
     )
@@ -1477,12 +1414,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
                 "annual_co2_reduction_t": (annual_fuel_mwh * fuel_factor * 0.05) if _ok_num(fuel_factor) else np.nan,
                 "implementation_months": 6,
                 "strategic_score_1_5": 4,
-                "mrv_method": "Facturas de combustible y verificación de rendimiento de caldera",
-                "normative_reference": "MITECO Alcance 1 combustión fija",
-                "notes": "Reduce consumo térmico manteniendo tecnología actual de proceso.",
-                "required_info": "annual_fuel_mwh;fuel_type;fuel_price_eur_mwh",
-                "provided_info": ";".join(_provided_flags(company, {"annual_fuel_mwh": annual_fuel_mwh, "fuel_price_eur_mwh": fuel_price})),
-                "data_dependency": "medium",
                 "activity_unit": "kWh fuel",
             }
         )
@@ -1498,12 +1429,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
                 "annual_co2_reduction_t": (annual_fuel_mwh * fuel_factor * 0.05) if _ok_num(fuel_factor) else np.nan,
                 "implementation_months": 8,
                 "strategic_score_1_5": 4,
-                "mrv_method": "Estudio térmico, instrumentación y balance energético antes/después",
-                "normative_reference": "Buenas prácticas de descarbonización térmica industrial",
-                "notes": "Proyecto dependiente de perfiles térmicos y fuentes de calor residual disponibles.",
-                "required_info": "waste_heat_sources;heat_demand_profile;annual_fuel_mwh",
-                "provided_info": ";".join(_provided_flags(company, {"annual_fuel_mwh": annual_fuel_mwh})),
-                "data_dependency": "high",
                 "activity_unit": "kWh fuel evitado",
             },
         )
@@ -1518,12 +1443,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
                 "annual_co2_reduction_t": np.nan,
                 "implementation_months": 7,
                 "strategic_score_1_5": 4,
-                "mrv_method": "Ingeniería de detalle, facturas de combustible y consumos eléctricos añadidos",
-                "normative_reference": "Transición de Scope 1 a Scope 2 con evaluación de red y proceso",
-                "notes": "Depende de temperatura de proceso, capacidad eléctrica y comparativa de costes.",
-                "required_info": "heat_demand_profile;temperature_levels;grid_capacity;fuel_price_eur_mwh;electricity_price_eur_mwh",
-                "provided_info": ";".join(_provided_flags(company, {"fuel_price_eur_mwh": fuel_price, "electricity_price_eur_mwh": electricity_price})),
-                "data_dependency": "high",
                 "activity_unit": "kWh fuel evitado + kWh eléctricos",
             }
         )
@@ -1540,12 +1459,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
                 "annual_co2_reduction_t": np.nan,
                 "implementation_months": 2,
                 "strategic_score_1_5": 3,
-                "mrv_method": "Tarjetas/facturas de combustible y km recorridos por vehículo",
-                "normative_reference": "MITECO Alcance 1 flota móvil",
-                "notes": "Quick win operativo; requiere datos de litros y trazabilidad de rutas.",
-                "required_info": "fleet_fuel_liters_by_type;fleet_inventory;route_profiles",
-                "provided_info": "",
-                "data_dependency": "high",
                 "activity_unit": "litros de combustible",
             }
         )
@@ -1561,12 +1474,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
                 "annual_co2_reduction_t": np.nan,
                 "implementation_months": 12,
                 "strategic_score_1_5": 4,
-                "mrv_method": "Inventario de flota, litros evitados y kWh de recarga",
-                "normative_reference": "Desplazamiento de Scope 1 a electricidad comprada",
-                "notes": "Requiere validar perfiles de ruta, autonomía y recarga.",
-                "required_info": "fleet_inventory;fuel_invoices;charging_infrastructure;route_profiles",
-                "provided_info": "",
-                "data_dependency": "high",
                 "activity_unit": "litros evitados + kWh recarga",
             },
         )
@@ -1583,12 +1490,6 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
                 "annual_co2_reduction_t": np.nan,
                 "implementation_months": 6,
                 "strategic_score_1_5": 4,
-                "mrv_method": "Registros de recarga, inventario de equipos y kg repuestos anuales",
-                "normative_reference": "Control de gases fluorados / PCA 6AR",
-                "notes": "Necesita trazabilidad de recargas y parque de equipos.",
-                "required_info": "refrigerants;kg_recharged_per_year;equipment_inventory;maintenance_logs",
-                "provided_info": "refrigerants",
-                "data_dependency": "high",
                 "activity_unit": "kg refrigerante",
             }
         )
@@ -1608,7 +1509,14 @@ def generate_ai_initiatives(
         raise RuntimeError("No hay GEMINI_API_KEY para generar iniciativas con IA.")
     context = build_ai_company_context(company, footprint)
     emissions_context = build_emissions_input_context(company, footprint)
-    research = _build_ai_web_research_context(company, footprint, api_key, model, "generación de iniciativas de descarbonización")
+    research = _build_ai_web_research_context(
+        company,
+        footprint,
+        api_key,
+        model,
+        "generación de iniciativas de descarbonización",
+        require_web_research=True,
+    )
     pestel_context = {
         str(category): [str(item) for item in items if str(item).strip()]
         for category, items in (pestel or {}).items()
@@ -1636,8 +1544,7 @@ def generate_ai_initiatives(
         "Devuelve SOLO JSON válido, sin texto adicional. "
         "No inventes cifras si no hay datos: usa null. "
         "Responde en español. "
-        "Incluye campos normativos (scope, emission_source, activity_unit, mrv_method, normative_reference) "
-        "y data gaps (required_info, provided_info, data_dependency). "
+        "Incluye scope, emission_source y activity_unit para que la app pueda interpretar internamente la medida. "
         "Las iniciativas deben estar adaptadas al sector, localización y realidad operativa de la empresa; evita propuestas genéricas. "
         "Antes de proponer iniciativas, realiza búsqueda web si el modelo dispone de esa herramienta. "
         "Investiga la empresa, su actividad real, productos/servicios, ubicación, sector, clientes o mercados y señales públicas recientes. "
@@ -1645,10 +1552,10 @@ def generate_ai_initiatives(
         "Cruza esa investigación con todos los datos estructurados facilitados por el usuario para proponer medidas más precisas. "
         "Cada iniciativa debe nacer de una conexión clara entre hallazgos externos, datos de huella y viabilidad operativa; evita listas estándar de medidas. "
         "Si se facilita PESTEL_CONTEXT, trátalo como contexto estratégico previo: úsalo para convertir riesgos, oportunidades, presiones regulatorias, tendencias tecnológicas, mercado, cadena de suministro y aspectos sociales/legales en iniciativas concretas. "
-        "No repitas el PESTEL en las notas: traduce sus implicaciones en medidas implantables, supuestos de CAPEX/OPEX y prioridades. "
+        "No repitas el PESTEL: traduce sus implicaciones en medidas implantables, supuestos de CAPEX/OPEX y prioridades. "
         "Cuando estimes CAPEX, ahorro OPEX, reducción CO2 e implementación, usa lógica dimensional y de orden de magnitud realista para ese tipo de empresa. "
         "Ten en cuenta tamaño energético, consumos, combustibles, flota, cubierta disponible, calor comprado, calor de proceso si se deduce, restricciones de implantación y presupuesto. "
-        "Si la base cuantitativa es insuficiente, reduce la confianza y usa null antes que inventar."
+        "Si la base cuantitativa es insuficiente, usa null antes que inventar."
     )
     user_prompt = (
         "Genera exactamente N iniciativas en JSON (lista de objetos) siguiendo este esquema. "
@@ -1661,8 +1568,6 @@ def generate_ai_initiatives(
         "pero no inventes detalles no verificables ni cifras específicas.\n"
         "Reglas de rigor:\n"
         "- Antes de listar medidas, investiga la actividad real de la empresa, su mercado, ubicaciones, productos/servicios y señales públicas recientes; usa esa investigación para personalizar cada iniciativa.\n"
-        "- Para cada iniciativa, refleja en notes el razonamiento: dato de huella o consumo relevante + hallazgo/contexto de actividad + por qué esa medida encaja.\n"
-        "- Si la búsqueda solo aporta contexto sectorial/local y no datos específicos de la empresa, indícalo de forma prudente en notes sin inventar.\n"
         "- Usa los datos introducidos para el cálculo de emisiones para detectar dónde están los principales consumos, focos emisores y palancas de mejora.\n"
         "- Si PESTEL_CONTEXT no está vacío, usa sus conclusiones para ajustar la selección, prioridad y estimaciones de las iniciativas; por ejemplo, riesgos energéticos, regulación local, ayudas, IA/digitalización, logística, retail/industria, cadena de suministro o actividad específica de la empresa.\n"
         "- Contrasta el PESTEL con FOOTPRINT y EMISSIONS_INPUT_CONTEXT: una oportunidad externa solo debe generar una iniciativa si tiene encaje con las fuentes emisoras reales o con datos operativos plausibles.\n"
@@ -1677,8 +1582,7 @@ def generate_ai_initiatives(
         "- El ahorro OPEX debe derivar de consumos/energía/precios o quedar en null si no hay base.\n"
         "- La reducción de CO2 debe guardar relación con los consumos y factores de emisión disponibles.\n"
         "- Los meses de implementación deben reflejar complejidad real: quick wins, proyectos de ingeniería, permisos, obra e integración.\n"
-        "- Usa confidence_0_1 para reflejar cuánta base real hay detrás de cada estimación.\n"
-        "- En notes explica brevemente el driver principal del CAPEX/OPEX/CO2 estimado.\n\n"
+        "- Devuelve únicamente los campos definidos en SCHEMA.\n\n"
         f"N = {n}\n"
         f"SCHEMA: {json.dumps(schema_note, ensure_ascii=False)}\n"
         f"WEB_RESEARCH_CONTEXT: {json.dumps(research.get('data', {}), ensure_ascii=False)}\n"
@@ -1689,21 +1593,49 @@ def generate_ai_initiatives(
         f"COMPANY_INPUTS: {json.dumps(company, ensure_ascii=False)}\n"
         f"FOOTPRINT: {json.dumps(footprint, ensure_ascii=False)}"
     )
-    result = _gemini_generate_json(
-        api_key,
-        model,
-        system_prompt,
-        user_prompt,
-        use_web_research=use_web_research,
-        require_web_research=False,
-        json_shape_hint='[{"id":"I1","initiative":"...","scope":"Alcance 1","emission_source":"...","initiative_family":"...","categoria":"quick_win","capex_eur":0,"annual_opex_saving_eur":0,"annual_co2_reduction_t":0,"co2_adjusted_t":0,"implementation_months":0,"strategic_score_1_5":3,"confidence_0_1":0.5,"mrv_method":"...","normative_reference":"...","notes":"...","required_info":"...","provided_info":"...","data_dependency":"medium","activity_unit":"..."}]',
-    )
-    data = result["data"]
-    if not isinstance(data, list):
-        raise RuntimeError("La salida de Gemini para iniciativas debe ser una lista JSON.")
-    ai_df = finalize_initiatives(pd.DataFrame(data), company, n=n)
-    if len(ai_df) < n:
-        raise RuntimeError(f"Gemini devolvió {len(ai_df)} iniciativas, pero se esperaban {n}.")
+    result: Dict[str, Any] | None = None
+    ai_df = pd.DataFrame()
+    retry_note = ""
+    json_shape_hint = '[{"id":"I1","initiative":"...","scope":"Alcance 1","emission_source":"...","initiative_family":"...","categoria":"quick_win","capex_eur":0,"annual_opex_saving_eur":0,"annual_co2_reduction_t":0,"co2_adjusted_t":0,"implementation_months":0,"strategic_score_1_5":3,"activity_unit":"..."}]'
+    errors: List[str] = []
+    for attempt in range(1, 4):
+        attempt_prompt = user_prompt + retry_note
+        try:
+            result = _gemini_generate_json(
+                api_key,
+                model,
+                system_prompt,
+                attempt_prompt,
+                use_web_research=use_web_research,
+                require_web_research=True,
+                json_shape_hint=json_shape_hint,
+            )
+            initiative_rows = _extract_initiative_list(result["data"])
+            ai_df = finalize_initiatives(pd.DataFrame(initiative_rows), company, n=n)
+            if len(ai_df) == n and result.get("grounding_used"):
+                break
+            errors.append(
+                f"Intento {attempt}: Gemini devolvió {len(ai_df)} iniciativas "
+                f"y grounding_used={bool(result.get('grounding_used'))}."
+            )
+            retry_reason = f"devolvió {len(ai_df)} iniciativas y se necesitan exactamente {n}"
+        except Exception as exc:
+            errors.append(f"Intento {attempt}: {exc}")
+            retry_reason = f"no devolvió una lista JSON válida ({exc})"
+        retry_note = (
+            "\n\nREINTENTO OBLIGATORIO:\n"
+            f"El intento anterior no cumplió el contrato: {retry_reason}.\n"
+            "Debes realizar búsqueda web de nuevo y devolver SOLO una lista JSON válida, sin markdown, "
+            "sin explicación, sin objeto contenedor y sin claves tipo initiatives/data/items. "
+            f"La respuesta debe empezar por '[' y terminar por ']'. Debe contener exactamente {n} iniciativas "
+            "distintas y completas. No devuelvas menos filas ni texto fuera del JSON.\n"
+        )
+    if result is None or len(ai_df) != n or not result.get("grounding_used"):
+        raise RuntimeError(
+            "Gemini no devolvió una cartera válida tras varios reintentos. "
+            "Se requieren exactamente 8 iniciativas generadas por IA con búsqueda web confirmada. "
+            + " | ".join(errors)
+        )
     return {
         "initiatives": ai_df,
         "grounding_used": bool(result["grounding_used"] or research.get("grounding_used")),
@@ -1716,17 +1648,13 @@ def compute_metrics(
     initiatives: pd.DataFrame,
     horizon_years: int,
     discount_rate: float,
-    co2_price: float,
-    confidence_floor: float,
 ) -> pd.DataFrame:
     df = normalize_columns(initiatives.copy())
     df = coerce_numeric(df)
     for col in OPTIONAL_COLUMNS:
         if col not in df.columns:
             df[col] = ""
-    df["confidence_0_1"] = df.apply(infer_confidence_row, axis=1)
-    df["co2_value_eur_year"] = pd.to_numeric(df["annual_co2_reduction_t"], errors="coerce") * float(co2_price)
-    df["total_annual_benefit_eur"] = pd.to_numeric(df["annual_opex_saving_eur"], errors="coerce") + df["co2_value_eur_year"]
+    df["total_annual_benefit_eur"] = pd.to_numeric(df["annual_opex_saving_eur"], errors="coerce").fillna(0.0)
     df["implementation_years"] = pd.to_numeric(df["implementation_months"], errors="coerce").fillna(0.0) / 12.0
 
     def npv_row(row: pd.Series) -> float:
@@ -1745,11 +1673,13 @@ def compute_metrics(
 
     df["npv_eur"] = df.apply(npv_row, axis=1)
     df["payback_years"] = np.where(df["total_annual_benefit_eur"] > 0, df["capex_eur"] / df["total_annual_benefit_eur"], np.nan)
-    df["npv_penalized_eur"] = df.apply(
-        lambda row: apply_confidence_penalty(row["npv_eur"], row["confidence_0_1"], confidence_floor),
-        axis=1,
-    )
-    return df
+    output_cols = REQUIRED_COLUMNS + OPTIONAL_COLUMNS + [
+        "total_annual_benefit_eur",
+        "implementation_years",
+        "npv_eur",
+        "payback_years",
+    ]
+    return df[[col for col in output_cols if col in df.columns]]
 
 
 def optimize_portfolio(
@@ -1766,7 +1696,6 @@ def optimize_portfolio(
         "capex_eur": 0.0,
         "annual_co2_reduction_t": 0.0,
         "co2_adjusted_t": 0.0,
-        "npv_penalized_eur": -1e9,
         "npv_eur": -1e9,
         "strategic_score_1_5": 3.0,
     }
@@ -1788,11 +1717,11 @@ def optimize_portfolio(
         ) >= float(min_co2_t)
 
     objective_norm = str(objective).strip().lower()
-    if objective_norm in {"maximizar npv penalizado", "maximize penalized npv"}:
+    if objective_norm in {"maximizar npv", "maximize npv"}:
         model += pulp.lpSum(
-            variables[i] * float(df.loc[df["id"].astype(str) == i, "npv_penalized_eur"].iloc[0]) for i in ids
+            variables[i] * float(df.loc[df["id"].astype(str) == i, "npv_eur"].iloc[0]) for i in ids
         )
-    elif objective_norm in {"maximizar reducción de co₂", "maximizar reducción de co2", "maximize co2 reduction"}:
+    elif objective_norm in {"maximizar reducción de co?", "maximizar reducción de co2", "maximize co2 reduction"}:
         model += pulp.lpSum(
             variables[i] * float(df.loc[df["id"].astype(str) == i, "annual_co2_reduction_t"].iloc[0]) for i in ids
         )
@@ -1825,7 +1754,7 @@ def optimize_portfolio(
         "status": pulp.LpStatus.get(status, str(status)),
         "total_capex": float(df.loc[df["selected"], "capex_eur"].sum()),
         "total_co2": float(df.loc[df["selected"], "annual_co2_reduction_t"].sum()),
-        "total_npv": float(df.loc[df["selected"], "npv_penalized_eur"].sum()),
+        "total_npv": float(df.loc[df["selected"], "npv_eur"].sum()),
         "selected_count": int(df["selected"].sum()),
     }
     return df, summary

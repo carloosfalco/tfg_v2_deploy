@@ -33,8 +33,6 @@ class GenerateAiInitiativesRequest(BaseModel):
 class FinancialParams(BaseModel):
     discount_rate: float = 0.08
     horizon: int = 8
-    co2_price: float = 80.0
-    confidence_floor: float = 1.0
 
 
 class ComputeMetricsRequest(BaseModel):

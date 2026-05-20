@@ -262,8 +262,6 @@ def compute_metrics_endpoint(payload: ComputeMetricsRequest) -> ApiEnvelope:
         df,
         horizon_years=payload.financial_params.horizon,
         discount_rate=payload.financial_params.discount_rate,
-        co2_price=payload.financial_params.co2_price,
-        confidence_floor=payload.financial_params.confidence_floor,
     )
     return ApiEnvelope(data={"initiatives": _serialize_df(result)})
 
