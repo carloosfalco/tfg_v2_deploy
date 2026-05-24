@@ -84,7 +84,7 @@ function PortfolioPieTooltip({
   );
 }
 
-function toCsv(rows: Initiative[]) {
+function toCsv(rows: Initiative[], initiativeNumberFor: (row: Initiative, index: number) => number) {
   const headers = [
     "initiative_number",
     "initiative",
@@ -103,7 +103,7 @@ function toCsv(rows: Initiative[]) {
         .map((header) => {
           const value =
             header === "initiative_number"
-              ? index + 1
+              ? initiativeNumberFor(row, index)
               : header === "categoria"
               ? displayCategory(row)
               : String((row as unknown as Record<string, unknown>)[header] ?? "");
@@ -159,9 +159,9 @@ export function PortfolioOptimizer({
 
   const exportHref = useMemo(() => {
     if (!selected.length) return "";
-    const blob = new Blob([toCsv(selected)], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([toCsv(selected, (item, index) => initiativeNumbers.get(item.id) ?? index + 1)], { type: "text/csv;charset=utf-8;" });
     return URL.createObjectURL(blob);
-  }, [selected]);
+  }, [initiativeNumbers, selected]);
 
   const infeasible =
     Boolean(result) &&
