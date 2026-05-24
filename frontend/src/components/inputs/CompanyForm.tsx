@@ -127,7 +127,7 @@ export function CompanyForm({
 
       <div className="form-grid__two">
         <label>
-          <span>Precio electricidad opcional</span>
+          <span>Precio electricidad (opcional)</span>
           <div className="input-with-unit">
             <input
               type="number"
