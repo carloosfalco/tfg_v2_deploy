@@ -900,6 +900,7 @@ def _gemini_generate_json(
     }
     if not use_web_research:
         payload["generationConfig"]["responseMimeType"] = "application/json"
+    web_tool_enabled = bool(use_web_research)
     if use_web_research:
         payload["tools"] = [{"google_search": {}}]
     try:
@@ -908,6 +909,7 @@ def _gemini_generate_json(
         raise RuntimeError(f"No se pudo conectar con Gemini: {exc}") from exc
     if response.status_code >= 400 and use_web_research and not require_web_research and response.status_code != 429:
         payload.pop("tools", None)
+        web_tool_enabled = False
         try:
             response = requests.post(url, json=payload, timeout=90)
         except requests.RequestException as exc:
@@ -945,17 +947,23 @@ def _gemini_generate_json(
             "Gemini devolvió texto vacío"
             + (f" (finishReason={finish_reason})." if finish_reason else ".")
         )
-    grounding = candidate.get("groundingMetadata") or {}
-    grounding_queries = [str(item) for item in grounding.get("webSearchQueries", []) if str(item).strip()]
-    grounding_chunks = grounding.get("groundingChunks", []) or []
+    grounding = candidate.get("groundingMetadata") or candidate.get("grounding_metadata") or {}
+    grounding_queries = [
+        str(item)
+        for item in (grounding.get("webSearchQueries") or grounding.get("web_search_queries") or [])
+        if str(item).strip()
+    ]
+    grounding_chunks = grounding.get("groundingChunks") or grounding.get("grounding_chunks") or []
+    grounding_supports = grounding.get("groundingSupports") or grounding.get("grounding_supports") or []
+    search_entry_point = grounding.get("searchEntryPoint") or grounding.get("search_entry_point") or {}
     grounding_sources: List[Dict[str, str]] = []
     for chunk in grounding_chunks:
-        web = chunk.get("web") or {}
-        uri = str(web.get("uri") or "").strip()
+        web = chunk.get("web") or chunk.get("retrievedContext") or chunk.get("retrieved_context") or {}
+        uri = str(web.get("uri") or web.get("url") or "").strip()
         title = str(web.get("title") or "").strip()
         if uri:
             grounding_sources.append({"uri": uri, "title": title})
-    grounding_used = bool(grounding_queries or grounding_sources)
+    grounding_used = bool(grounding_queries or grounding_sources or grounding_supports or search_entry_point)
     if require_web_research and not grounding_used:
         raise RuntimeError(
             "Gemini generó contenido, pero no confirmó búsqueda web. "
@@ -970,6 +978,7 @@ def _gemini_generate_json(
     return {
         "data": parsed_data,
         "grounding_used": grounding_used,
+        "web_research_requested": web_tool_enabled,
         "grounding_queries": grounding_queries,
         "grounding_sources": grounding_sources,
     }

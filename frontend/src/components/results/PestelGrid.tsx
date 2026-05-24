@@ -45,7 +45,7 @@ export function PestelGrid({
       {meta ? (
         <div className="panel ai-status ai-status--ok">
           <strong>Origen:</strong> IA · <strong>Modelo:</strong> {meta.model} · <strong>Búsqueda web:</strong>{" "}
-          {meta.grounding_used ? "confirmada" : "no confirmada"}
+          {meta.grounding_used ? "confirmada" : "solicitada"}
         </div>
       ) : hasPestel ? (
         <div className="panel ai-status ai-status--warning">
