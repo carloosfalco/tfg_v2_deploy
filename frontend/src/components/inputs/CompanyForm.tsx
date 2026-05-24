@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import type { CompanyInputs, MeasureStatus } from "../../types";
+import { parseLocaleNumberInput } from "../../utils/numberInput";
 
 const measures = [
   "LED",
@@ -47,7 +48,7 @@ export function CompanyForm({
       main_customer_locations: value.main_customer_locations ?? "",
       inventory_year: value.inventory_year,
       electricity_price_eur_mwh: value.electricity_price_eur_mwh || undefined,
-      roof_area_m2: value.roof_area_m2,
+      roof_area_m2: value.roof_area_m2 || undefined,
       implemented_measures: value.implemented_measures,
     },
   });
@@ -130,10 +131,13 @@ export function CompanyForm({
           <span>Precio electricidad (opcional)</span>
           <div className="input-with-unit">
             <input
-              type="number"
+              inputMode="decimal"
+              type="text"
               step="1"
               placeholder="Se estimará si se deja vacío"
-              {...register("electricity_price_eur_mwh", { valueAsNumber: true })}
+              {...register("electricity_price_eur_mwh", {
+                setValueAs: (raw) => parseLocaleNumberInput(String(raw ?? ""), 0),
+              })}
             />
             <small>€/MWh</small>
           </div>
@@ -141,7 +145,14 @@ export function CompanyForm({
         <label>
           <span>Área disponible de cubierta</span>
           <div className="input-with-unit">
-            <input type="number" step="1" {...register("roof_area_m2", { valueAsNumber: true })} />
+            <input
+              inputMode="decimal"
+              type="text"
+              step="1"
+              {...register("roof_area_m2", {
+                setValueAs: (raw) => parseLocaleNumberInput(String(raw ?? ""), 0),
+              })}
+            />
             <small>m²</small>
           </div>
         </label>

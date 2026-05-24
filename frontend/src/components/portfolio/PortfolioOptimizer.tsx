@@ -11,6 +11,7 @@ import {
   Cell,
 } from "recharts";
 import type { FinancialParams, Initiative, PortfolioResult } from "../../types";
+import { LocalizedNumberInput } from "../inputs/LocalizedNumberInput";
 
 type OptimizeParams = {
   financialParams: FinancialParams;
@@ -54,13 +55,13 @@ function PortfolioBarTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: Array<{ payload?: { name?: string; co2?: number; capex?: number } }>;
+  payload?: Array<{ payload?: { initiativeNumber?: number; name?: string; co2?: number; capex?: number } }>;
 }) {
   const data = payload?.[0]?.payload;
   if (!active || !data) return null;
   return (
     <div className="chart-tooltip">
-      <strong>{data.name}</strong>
+      <strong>Nº {data.initiativeNumber}: {data.name}</strong>
       <span>{formatNumber(data.co2)} tCO₂e/año</span>
     </div>
   );
@@ -71,13 +72,13 @@ function PortfolioPieTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: Array<{ payload?: { name?: string; capex?: number } }>;
+  payload?: Array<{ payload?: { initiativeNumber?: number; name?: string; capex?: number } }>;
 }) {
   const data = payload?.[0]?.payload;
   if (!active || !data) return null;
   return (
     <div className="chart-tooltip">
-      <strong>{data.name}</strong>
+      <strong>Nº {data.initiativeNumber}: {data.name}</strong>
       <span>CAPEX: {formatCurrency(data.capex)}</span>
     </div>
   );
@@ -85,7 +86,7 @@ function PortfolioPieTooltip({
 
 function toCsv(rows: Initiative[]) {
   const headers = [
-    "id",
+    "initiative_number",
     "initiative",
     "categoria",
     "capex_eur",
@@ -97,11 +98,13 @@ function toCsv(rows: Initiative[]) {
   ];
   const lines = [
     headers.join(","),
-    ...rows.map((row) =>
+    ...rows.map((row, index) =>
       headers
         .map((header) => {
           const value =
-            header === "categoria"
+            header === "initiative_number"
+              ? index + 1
+              : header === "categoria"
               ? displayCategory(row)
               : String((row as unknown as Record<string, unknown>)[header] ?? "");
           return `"${String(value).replace(/"/g, '""')}"`;
@@ -140,9 +143,14 @@ export function PortfolioOptimizer({
     .filter((value) => Number.isFinite(value) && value >= 0);
   const maxPayback = selectedPaybacks.length ? Math.max(...selectedPaybacks) : null;
   const budgetUsedPct = budget > 0 && result ? Math.min(100, (result.summary.total_capex / budget) * 100) : 0;
+  const initiativeNumbers = useMemo(
+    () => new Map(initiatives.map((item, index) => [item.id, index + 1])),
+    [initiatives]
+  );
 
   const selectedChartData = selected.map((item, index) => ({
     id: item.id,
+    initiativeNumber: initiativeNumbers.get(item.id) ?? index + 1,
     name: item.initiative,
     capex: Number(item.capex_eur ?? 0),
     co2: Number(item.annual_co2_reduction_t ?? 0),
@@ -226,14 +234,13 @@ export function PortfolioOptimizer({
               <label>
                 <span>Tasa de descuento (%)</span>
                 <small>Tasa utilizada para calcular métricas financieras.</small>
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   step="0.1"
                   value={Number((financialParams.discount_rate * 100).toFixed(2))}
-                  onChange={(event) =>
+                  onValueChange={(next) =>
                     onFinancialChange({
                       ...financialParams,
-                      discount_rate: finiteOr(Number(event.target.value) / 100, 0),
+                      discount_rate: finiteOr(next / 100, 0),
                     })
                   }
                 />
@@ -241,42 +248,39 @@ export function PortfolioOptimizer({
               <label>
                 <span>Horizonte temporal (años)</span>
                 <small>Periodo de evaluación financiera.</small>
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   min="1"
                   value={financialParams.horizon}
-                  onChange={(event) =>
-                    onFinancialChange({ ...financialParams, horizon: Math.max(1, finiteOr(Number(event.target.value), 1)) })
+                  onValueChange={(next) =>
+                    onFinancialChange({ ...financialParams, horizon: Math.max(1, finiteOr(next, 1)) })
                   }
                 />
               </label>
               <label>
                 <span>Presupuesto máximo / CAPEX máximo (€)</span>
                 <small>CAPEX máximo disponible para seleccionar iniciativas.</small>
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   step="10000"
                   value={budget}
-                  onChange={(event) => setBudget(finiteOr(Number(event.target.value), 0))}
+                  onValueChange={(next) => setBudget(finiteOr(next, 0))}
                 />
               </label>
               <label>
                 <span>Objetivo mínimo de reducción anual de CO₂e</span>
                 <small>Reducción anual mínima deseada de emisiones.</small>
-                <input type="number" value={minCo2} onChange={(event) => setMinCo2(finiteOr(Number(event.target.value), 0))} />
+                <LocalizedNumberInput value={minCo2} onValueChange={(next) => setMinCo2(finiteOr(next, 0))} />
               </label>
               <label>
                 <span>Payback máximo aceptable</span>
                 <small>Periodo máximo de recuperación aceptado.</small>
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   step="0.1"
-                  value={financialParams.max_payback_years ?? ""}
+                  value={financialParams.max_payback_years ?? 0}
                   placeholder="Sin límite"
-                  onChange={(event) =>
+                  onValueChange={(next) =>
                     onFinancialChange({
                       ...financialParams,
-                      max_payback_years: event.target.value === "" ? null : Number(event.target.value),
+                      max_payback_years: next || null,
                     })
                   }
                 />
@@ -357,6 +361,7 @@ export function PortfolioOptimizer({
                     <thead>
                       <tr>
                         <th>Iniciativa</th>
+                        <th>Nº</th>
                         <th>Categoría</th>
                         <th>CAPEX</th>
                         <th>Reducción anual CO₂e</th>
@@ -367,9 +372,10 @@ export function PortfolioOptimizer({
                       </tr>
                     </thead>
                     <tbody>
-                      {selected.map((initiative) => (
+                      {selected.map((initiative, index) => (
                         <tr key={initiative.id}>
                           <td>{initiative.initiative}</td>
+                          <td>{initiativeNumbers.get(initiative.id) ?? index + 1}</td>
                           <td>{displayCategory(initiative)}</td>
                           <td>{formatCurrency(initiative.capex_eur)}</td>
                           <td>{formatNumber(initiative.annual_co2_reduction_t)} t</td>
@@ -394,7 +400,7 @@ export function PortfolioOptimizer({
                   <p className="muted">Unidad del eje vertical: tCO₂e/año. Cada barra es una iniciativa seleccionada.</p>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={selectedChartData}>
-                      <XAxis dataKey="id" label={{ value: "Iniciativa seleccionada", position: "insideBottom", offset: -4 }} />
+                      <XAxis dataKey="initiativeNumber" label={{ value: "Nº de iniciativa", position: "insideBottom", offset: -4 }} />
                       <YAxis
                         width={70}
                         tickFormatter={(value) => formatNumber(Number(value), 0)}

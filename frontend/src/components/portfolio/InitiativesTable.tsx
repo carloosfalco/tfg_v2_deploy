@@ -6,13 +6,9 @@ import {
 } from "@tanstack/react-table";
 import { useMemo } from "react";
 import type { AiGenerationMeta, Initiative } from "../../types";
+import { LocalizedNumberInput } from "../inputs/LocalizedNumberInput";
 
 const columnHelper = createColumnHelper<Initiative>();
-
-function numberInputValue(value: unknown) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? String(numeric) : "";
-}
 
 export function InitiativesTable({
   data,
@@ -31,19 +27,23 @@ export function InitiativesTable({
 }) {
   const columns = useMemo(
     () => [
+      columnHelper.display({
+        id: "initiative_number",
+        header: "Nº",
+        cell: (info) => info.row.index + 1,
+      }),
       columnHelper.accessor("scope", { header: "Scope" }),
       columnHelper.accessor("initiative_family", { header: "Familia" }),
       columnHelper.accessor("initiative", { header: "Iniciativa" }),
       columnHelper.accessor("capex_eur", {
         header: "CAPEX (€)",
         cell: (info) => (
-          <input
+          <LocalizedNumberInput
             className="numeric-input"
-            type="number"
-            value={numberInputValue(info.getValue())}
-            onChange={(event) => {
+            value={info.getValue()}
+            onValueChange={(nextValue) => {
               const next = [...data];
-              next[info.row.index] = { ...next[info.row.index], capex_eur: Number(event.target.value) };
+              next[info.row.index] = { ...next[info.row.index], capex_eur: nextValue };
               onChange(next);
             }}
           />
@@ -52,15 +52,14 @@ export function InitiativesTable({
       columnHelper.accessor("annual_opex_saving_eur", {
         header: "Ahorro OPEX (€/año)",
         cell: (info) => (
-          <input
+          <LocalizedNumberInput
             className="numeric-input"
-            type="number"
-            value={numberInputValue(info.getValue())}
-            onChange={(event) => {
+            value={info.getValue()}
+            onValueChange={(nextValue) => {
               const next = [...data];
               next[info.row.index] = {
                 ...next[info.row.index],
-                annual_opex_saving_eur: Number(event.target.value),
+                annual_opex_saving_eur: nextValue,
               };
               onChange(next);
             }}
@@ -70,15 +69,14 @@ export function InitiativesTable({
       columnHelper.accessor("annual_co2_reduction_t", {
         header: "CO₂ evitado (t/año)",
         cell: (info) => (
-          <input
+          <LocalizedNumberInput
             className="numeric-input"
-            type="number"
-            value={numberInputValue(info.getValue())}
-            onChange={(event) => {
+            value={info.getValue()}
+            onValueChange={(nextValue) => {
               const next = [...data];
               next[info.row.index] = {
                 ...next[info.row.index],
-                annual_co2_reduction_t: Number(event.target.value),
+                annual_co2_reduction_t: nextValue,
               };
               onChange(next);
             }}
@@ -88,15 +86,14 @@ export function InitiativesTable({
       columnHelper.accessor("implementation_months", {
         header: "Meses",
         cell: (info) => (
-          <input
+          <LocalizedNumberInput
             className="numeric-input"
-            type="number"
-            value={numberInputValue(info.getValue())}
-            onChange={(event) => {
+            value={info.getValue()}
+            onValueChange={(nextValue) => {
               const next = [...data];
               next[info.row.index] = {
                 ...next[info.row.index],
-                implementation_months: Number(event.target.value),
+                implementation_months: nextValue,
               };
               onChange(next);
             }}
@@ -106,17 +103,16 @@ export function InitiativesTable({
       columnHelper.accessor("strategic_score_1_5", {
         header: "Encaje estratégico (1-5)",
         cell: (info) => (
-          <input
+          <LocalizedNumberInput
             className="numeric-input"
-            type="number"
             min="1"
             max="5"
-            value={numberInputValue(info.getValue() ?? 3)}
-            onChange={(event) => {
+            value={info.getValue() ?? 3}
+            onValueChange={(nextValue) => {
               const next = [...data];
               next[info.row.index] = {
                 ...next[info.row.index],
-                strategic_score_1_5: Number(event.target.value),
+                strategic_score_1_5: nextValue,
               };
               onChange(next);
             }}

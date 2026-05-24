@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CatalogItem, CompanyInputs, FootprintResult } from "../../types";
+import { LocalizedNumberInput } from "./LocalizedNumberInput";
 
 const LOCATION_FACTORS: Record<2023 | 2024 | 2025, number> = {
   2023: 0.120,
@@ -113,11 +114,10 @@ export function Scope2Form({
             <label>
               <span>Electricidad comprada</span>
               <div className="input-with-unit">
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   step="100"
                   value={value.annual_electricity_mwh}
-                  onChange={(event) => update({ ...value, annual_electricity_mwh: Number(event.target.value) })}
+                  onValueChange={(next) => update({ ...value, annual_electricity_mwh: next })}
                 />
                 <small>MWh/año</small>
               </div>
@@ -182,16 +182,15 @@ export function Scope2Form({
               <div className="scope-card" key={`supplier-${row.supplier_name}`}>
                 <label>
                   <span>{row.supplier_name}</span>
-                  <input
-                    type="number"
+                  <LocalizedNumberInput
                     step="100"
                     value={row.consumo_mwh}
-                    onChange={(event) =>
+                    onValueChange={(nextValue) =>
                       update({
                         ...value,
                         scope2_supplier_rows: value.scope2_supplier_rows.map((item) =>
                           item.supplier_name === row.supplier_name
-                            ? { ...item, consumo_mwh: Number(event.target.value) }
+                            ? { ...item, consumo_mwh: nextValue }
                             : item
                         ),
                       })
@@ -222,13 +221,12 @@ export function Scope2Form({
             <label>
               <span>Porcentaje cubierto por GdO</span>
               <div className="input-with-unit">
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   step="1"
                   min="0"
                   max="100"
                   value={value.gdo_coverage_pct}
-                  onChange={(event) => update({ ...value, gdo_coverage_pct: Number(event.target.value) })}
+                  onValueChange={(next) => update({ ...value, gdo_coverage_pct: next })}
                 />
                 <small>%</small>
               </div>
@@ -236,15 +234,14 @@ export function Scope2Form({
             <label>
               <span>MWh cubiertos por GdO</span>
               <div className="input-with-unit">
-                <input
-                  type="number"
+                <LocalizedNumberInput
                   step="100"
                   min="0"
                   value={gdoMwh}
-                  onChange={(event) =>
+                  onValueChange={(next) =>
                     update({
                       ...value,
-                      gdo_coverage_pct: supplierTotal > 0 ? Math.min(100, (Number(event.target.value) / supplierTotal) * 100) : 0,
+                      gdo_coverage_pct: supplierTotal > 0 ? Math.min(100, (next / supplierTotal) * 100) : 0,
                     })
                   }
                 />
@@ -289,11 +286,10 @@ export function Scope2Form({
         <label>
           <span>Calor o vapor comprado</span>
           <div className="input-with-unit">
-            <input
-              type="number"
+            <LocalizedNumberInput
               step="1000"
               value={value.annual_purchased_heat_mwh}
-              onChange={(event) => update({ ...value, annual_purchased_heat_mwh: Number(event.target.value) })}
+              onValueChange={(next) => update({ ...value, annual_purchased_heat_mwh: next })}
             />
             <small>MWh/año</small>
           </div>
@@ -301,11 +297,10 @@ export function Scope2Form({
         <label>
           <span>Factor CO2 calor/vapor</span>
           <div className="input-with-unit">
-            <input
-              type="number"
+            <LocalizedNumberInput
               step="0.01"
               value={value.co2_factor_heat_t_per_mwh}
-              onChange={(event) => update({ ...value, co2_factor_heat_t_per_mwh: Number(event.target.value) })}
+              onValueChange={(next) => update({ ...value, co2_factor_heat_t_per_mwh: next })}
             />
             <small>tCO2/MWh</small>
           </div>

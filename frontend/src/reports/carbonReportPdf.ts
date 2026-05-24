@@ -233,7 +233,7 @@ class PdfDocument {
     this.y -= 10;
   }
 
-  initiativeTable(rows: Initiative[]) {
+  initiativeTable(rows: Initiative[], initiativeNumberFor: (item: Initiative, index: number) => number) {
     this.ensure(36);
     this.rect(MARGIN, this.y - 18, PAGE_WIDTH - MARGIN * 2, 24, "0.050 0.360 0.330");
     this.write("Iniciativas y métricas principales", MARGIN + 7, this.y - 9, 8, "F2", "1 1 1");
@@ -242,7 +242,7 @@ class PdfDocument {
     rows.forEach((item, index) => {
       this.ensure(76);
       if (index % 2 === 0) this.rect(MARGIN, this.y - 56, PAGE_WIDTH - MARGIN * 2, 64, "0.985 0.990 0.990");
-      this.write(`${index + 1}. ${item.initiative}`, MARGIN + 7, this.y, 8.4, "F2", "0.10 0.14 0.17");
+      this.write(`Iniciativa Nº ${initiativeNumberFor(item, index)} - ${item.initiative}`, MARGIN + 7, this.y, 8.4, "F2", "0.10 0.14 0.17");
       this.y -= 13;
       this.write(`Scope: ${item.scope || "N/D"}   |   Familia: ${item.initiative_family || "N/D"}   |   Fuente: ${item.emission_source || "N/D"}`, MARGIN + 7, this.y, 7.2, "F1", "0.35 0.40 0.43");
       this.y -= 15;
@@ -324,6 +324,7 @@ export function buildCarbonReportPdf(state: AppState) {
   const docTitle = `Informe de descarbonización - ${company.company_name || "empresa"}`;
   const doc = new PdfDocument(docTitle);
   const selected = selectedInitiatives(state);
+  const initiativeNumbers = new Map(state.initiatives.map((item, index) => [item.id, index + 1]));
   const selectedCo2 = selected.reduce((sum, item) => sum + Number(item.annual_co2_reduction_t ?? 0), 0);
   const selectedCapex = selected.reduce((sum, item) => sum + Number(item.capex_eur ?? 0), 0);
 
@@ -400,7 +401,7 @@ export function buildCarbonReportPdf(state: AppState) {
   } else {
     doc.paragraph("El portafolio aún no está optimizado. Se muestran las iniciativas disponibles o las métricas calculadas si existen.");
   }
-  if (selected.length) doc.initiativeTable(selected);
+  if (selected.length) doc.initiativeTable(selected, (item, index) => initiativeNumbers.get(item.id) ?? index + 1);
   else doc.paragraph("No hay iniciativas disponibles en el estado actual.");
 
   doc.spacer(18);

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CatalogItem, CompanyInputs, FootprintResult } from "../../types";
+import { parseLocaleNumberInput } from "../../utils/numberInput";
 
 const COMMON_STATIONARY_LABELS = new Set(["Gasóleo C", "Gasóleo B", "Gas natural", "LPG"]);
 const COMMON_MOBILE_LABELS = ["B7", "E5"];
@@ -25,7 +26,7 @@ function sanitize(value: CompanyInputs): CompanyInputs {
 
 function parseQuantity(raw: string) {
   if (raw.trim() === "") return 0;
-  const value = Number(raw);
+  const value = parseLocaleNumberInput(raw, 0);
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
@@ -207,7 +208,8 @@ export function Scope1Form({
                   {fuel.label} ({fuel.unit})
                 </span>
                 <input
-                  type="number"
+                  inputMode="decimal"
+                  type="text"
                   step="1000"
                   placeholder="Introduce la cifra real"
                   value={displayQuantity(getStationaryQty(fuel.key ?? ""))}
@@ -252,7 +254,8 @@ export function Scope1Form({
                   {fuel.label} ({fuel.unit})
                 </span>
                 <input
-                  type="number"
+                  inputMode="decimal"
+                  type="text"
                   step="1000"
                   placeholder="Introduce la cifra real"
                   value={displayQuantity(entry.quantity)}
@@ -312,7 +315,8 @@ export function Scope1Form({
                         {displayMobileFuelLabel(fuelLabel)} · {item.vehicle_type} ({item.unit})
                       </span>
                       <input
-                        type="number"
+                        inputMode="decimal"
+                        type="text"
                         step="1000"
                         placeholder="Introduce la cifra real"
                         value={displayQuantity(entry.quantity)}
@@ -362,7 +366,8 @@ export function Scope1Form({
                   {displayMobileFuelLabel(item.fuel_label)} · {item.vehicle_type} ({item.unit})
                 </span>
                 <input
-                  type="number"
+                  inputMode="decimal"
+                  type="text"
                   step="1000"
                   placeholder="Introduce la cifra real"
                   value={displayQuantity(entry.quantity)}
@@ -411,7 +416,8 @@ export function Scope1Form({
             <label>
               <span>{entry.name} (kg recargados/año)</span>
               <input
-                type="number"
+                inputMode="decimal"
+                type="text"
                 step="0.01"
                 placeholder="Introduce la cifra real"
                 value={displayQuantity(entry.quantity)}
