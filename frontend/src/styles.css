@@ -2257,8 +2257,13 @@ table th {
 }
 
 .initiatives-table {
-  min-width: 1180px;
+  min-width: 1540px;
   table-layout: fixed;
+}
+
+.initiatives-table th {
+  white-space: normal;
+  line-height: 1.2;
 }
 
 .initiatives-table th:nth-child(1),
@@ -2273,16 +2278,49 @@ table th {
 
 .initiatives-table th:nth-child(3),
 .initiatives-table td:nth-child(3) {
-  width: 190px;
+  width: 170px;
 }
 
 .initiatives-table th:nth-child(4),
 .initiatives-table td:nth-child(4) {
-  width: 420px;
-  max-width: 420px;
+  width: 380px;
+  max-width: 380px;
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 1.35;
+}
+
+.initiatives-table th:nth-child(5),
+.initiatives-table td:nth-child(5) {
+  width: 150px;
+}
+
+.initiatives-table th:nth-child(6),
+.initiatives-table td:nth-child(6) {
+  width: 170px;
+}
+
+.initiatives-table th:nth-child(7),
+.initiatives-table td:nth-child(7) {
+  width: 160px;
+}
+
+.initiatives-table th:nth-child(8),
+.initiatives-table td:nth-child(8) {
+  width: 110px;
+}
+
+.initiatives-table th:nth-child(9),
+.initiatives-table td:nth-child(9) {
+  width: 170px;
+}
+
+.initiatives-table .numeric-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .pestel-grid {
