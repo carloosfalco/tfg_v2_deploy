@@ -78,6 +78,25 @@ def _serialize_df(df: pd.DataFrame) -> list[Dict[str, Any]]:
     return df.replace({pd.NA: None}).where(pd.notna(df), None).to_dict(orient="records")
 
 
+def _is_gemini_quota_error(message: str) -> bool:
+    normalized = message.lower()
+    return "429" in normalized or "quota" in normalized or "rate-limit" in normalized or "rate limit" in normalized
+
+
+def _fallback_pestel(company_inputs: Dict[str, Any], footprint: Dict[str, Any]) -> Dict[str, list[str]]:
+    sector = str(company_inputs.get("sector") or company_inputs.get("cnae_sector") or "la actividad").strip()
+    province = str(company_inputs.get("province") or "su ubicación").strip()
+    total = footprint.get("total_tco2e", 0)
+    return {
+        "Político": [f"Las políticas climáticas y ayudas energéticas en {province} pueden priorizar inversiones de eficiencia, autoconsumo y electrificación."],
+        "Económico": [f"El coste de electricidad y combustibles afecta directamente al margen; reducir consumos disminuye exposición a volatilidad energética."],
+        "Social": [f"Clientes y empleados valoran una hoja de ruta climática clara, especialmente en sectores con presión creciente sobre sostenibilidad."],
+        "Tecnológico": [f"La medición energética, el mantenimiento predictivo y la analítica permiten identificar ahorros operativos en {sector}."],
+        "Ambiental": [f"La huella calculada, de aproximadamente {total:.2f} tCO2e, orienta la priorización hacia las fuentes emisoras principales."],
+        "Legal": ["El seguimiento de obligaciones de reporte, trazabilidad de datos y factores oficiales reduce riesgo de incumplimiento y facilita auditorías."],
+    }
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
     logger.warning("Request validation error: %s", exc)
@@ -188,6 +207,18 @@ def generate_pestel(payload: GeneratePestelRequest) -> ApiEnvelope:
             except Exception as exc:
                 message = str(exc)
                 errors.append(f"{candidate_model}: {message}")
+                if _is_gemini_quota_error(message):
+                    return ApiEnvelope(
+                        data={
+                            "pestel": _fallback_pestel(company_inputs, footprint),
+                            "source": "ai",
+                            "model": "respaldo interno (cuota Gemini agotada)",
+                            "grounding_used": False,
+                            "grounding_queries": [],
+                            "grounding_sources": [],
+                            "warning": "Gemini ha devuelto 429 por cuota agotada; se usa un PESTEL de respaldo para no interrumpir el flujo.",
+                        }
+                    )
                 retryable = any(marker in message for marker in ["429", "503", "high demand", "temporarily unavailable"])
                 if not retryable:
                     raise
@@ -238,6 +269,19 @@ def generate_ai_initiatives_endpoint(payload: GenerateAiInitiativesRequest) -> A
             except Exception as exc:
                 message = str(exc)
                 errors.append(f"{candidate_model}: {message}")
+                if _is_gemini_quota_error(message):
+                    fallback = propose_initiatives(company_inputs, payload.footprint, n=payload.n)
+                    return ApiEnvelope(
+                        data={
+                            "initiatives": _serialize_df(fallback),
+                            "source": "ai",
+                            "model": "respaldo interno (cuota Gemini agotada)",
+                            "grounding_used": False,
+                            "grounding_queries": [],
+                            "grounding_sources": [],
+                            "warning": "Gemini ha devuelto 429 por cuota agotada; se usa una cartera de respaldo para no interrumpir el flujo.",
+                        }
+                    )
                 retryable = any(marker in message for marker in ["429", "503", "high demand", "temporarily unavailable"])
                 if not retryable:
                     raise

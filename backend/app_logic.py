@@ -1636,6 +1636,8 @@ def generate_ai_initiatives(
             retry_reason = f"devolvió {len(ai_df)} iniciativas y se necesitan exactamente {n}"
         except Exception as exc:
             errors.append(f"Intento {attempt}: {exc}")
+            if "429" in str(exc) or "quota" in str(exc).lower():
+                raise
             retry_reason = f"no devolvió una lista JSON válida ({exc})"
         retry_note = (
             "\n\nREINTENTO OBLIGATORIO:\n"
