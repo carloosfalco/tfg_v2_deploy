@@ -357,11 +357,11 @@ export function PortfolioOptimizer({
               <section className="panel selected-table-panel">
                 <h3>Iniciativas seleccionadas</h3>
                 <div className="table-scroll">
-                  <table className="data-table">
+                  <table className="data-table selected-initiatives-table">
                     <thead>
                       <tr>
-                        <th>Iniciativa</th>
                         <th>Nº</th>
+                        <th>Iniciativa</th>
                         <th>Categoría</th>
                         <th>CAPEX</th>
                         <th>Reducción anual CO₂e</th>
@@ -374,8 +374,8 @@ export function PortfolioOptimizer({
                     <tbody>
                       {selected.map((initiative, index) => (
                         <tr key={initiative.id}>
-                          <td>{initiative.initiative}</td>
                           <td>{initiativeNumbers.get(initiative.id) ?? index + 1}</td>
+                          <td>{initiative.initiative}</td>
                           <td>{displayCategory(initiative)}</td>
                           <td>{formatCurrency(initiative.capex_eur)}</td>
                           <td>{formatNumber(initiative.annual_co2_reduction_t)} t</td>

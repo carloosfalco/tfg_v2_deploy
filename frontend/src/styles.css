@@ -2635,6 +2635,57 @@ table th {
   overflow-x: auto;
 }
 
+.selected-initiatives-table {
+  min-width: 1380px;
+  table-layout: fixed;
+}
+
+.selected-initiatives-table th {
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.selected-initiatives-table th:nth-child(1),
+.selected-initiatives-table td:nth-child(1) {
+  width: 56px;
+}
+
+.selected-initiatives-table th:nth-child(2),
+.selected-initiatives-table td:nth-child(2) {
+  width: 330px;
+  max-width: 330px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.selected-initiatives-table th:nth-child(3),
+.selected-initiatives-table td:nth-child(3) {
+  width: 180px;
+  white-space: normal;
+}
+
+.selected-initiatives-table th:nth-child(4),
+.selected-initiatives-table td:nth-child(4),
+.selected-initiatives-table th:nth-child(6),
+.selected-initiatives-table td:nth-child(6),
+.selected-initiatives-table th:nth-child(8),
+.selected-initiatives-table td:nth-child(8),
+.selected-initiatives-table th:nth-child(9),
+.selected-initiatives-table td:nth-child(9) {
+  width: 145px;
+}
+
+.selected-initiatives-table th:nth-child(5),
+.selected-initiatives-table td:nth-child(5) {
+  width: 170px;
+}
+
+.selected-initiatives-table th:nth-child(7),
+.selected-initiatives-table td:nth-child(7) {
+  width: 120px;
+}
+
 .portfolio-chart-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
