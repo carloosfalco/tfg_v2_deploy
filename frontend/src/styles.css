@@ -2256,6 +2256,35 @@ table th {
   white-space: normal;
 }
 
+.initiatives-table {
+  min-width: 1180px;
+  table-layout: fixed;
+}
+
+.initiatives-table th:nth-child(1),
+.initiatives-table td:nth-child(1) {
+  width: 54px;
+}
+
+.initiatives-table th:nth-child(2),
+.initiatives-table td:nth-child(2) {
+  width: 112px;
+}
+
+.initiatives-table th:nth-child(3),
+.initiatives-table td:nth-child(3) {
+  width: 190px;
+}
+
+.initiatives-table th:nth-child(4),
+.initiatives-table td:nth-child(4) {
+  width: 420px;
+  max-width: 420px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
 .pestel-grid {
   display: grid;
   gap: 16px;

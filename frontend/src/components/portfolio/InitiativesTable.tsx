@@ -171,7 +171,7 @@ export function InitiativesTable({
       ) : null}
 
       <div className={`panel table-shell${isLoading ? " table-shell--loading" : ""}`}>
-        <table className="data-table">
+        <table className="data-table initiatives-table">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
