@@ -1253,6 +1253,22 @@ def classify_thematic_bucket(row: pd.Series) -> str:
     return "otras"
 
 
+def _combined_initiative_text(df: pd.DataFrame) -> pd.Series:
+    return (
+        df.get("emission_source", pd.Series("", index=df.index)).fillna("").astype(str)
+        + " "
+        + df.get("initiative_family", pd.Series("", index=df.index)).fillna("").astype(str)
+        + " "
+        + df.get("initiative", pd.Series("", index=df.index)).fillna("").astype(str)
+        + " "
+        + df.get("activity_unit", pd.Series("", index=df.index)).fillna("").astype(str)
+    ).str.lower()
+
+
+def company_has_gdo(company_inputs: Dict[str, Any]) -> bool:
+    return _implemented_status(company_inputs, "GdO") == "yes" or _to_float(company_inputs.get("gdo_coverage_pct")) > 0
+
+
 def filter_initiatives_by_active_sources(df: pd.DataFrame, company_inputs: Dict[str, Any]) -> pd.DataFrame:
     annual_electricity_mwh = _to_float(company_inputs.get("annual_electricity_mwh"))
     supplier_electricity_mwh = sum(
@@ -1268,15 +1284,7 @@ def filter_initiatives_by_active_sources(df: pd.DataFrame, company_inputs: Dict[
     if df.empty:
         return df
 
-    combined = (
-        df.get("emission_source", pd.Series("", index=df.index)).fillna("").astype(str)
-        + " "
-        + df.get("initiative_family", pd.Series("", index=df.index)).fillna("").astype(str)
-        + " "
-        + df.get("initiative", pd.Series("", index=df.index)).fillna("").astype(str)
-        + " "
-        + df.get("activity_unit", pd.Series("", index=df.index)).fillna("").astype(str)
-    ).str.lower()
+    combined = _combined_initiative_text(df)
     mask = pd.Series(True, index=df.index)
 
     if not has_stationary:
@@ -1289,8 +1297,20 @@ def filter_initiatives_by_active_sources(df: pd.DataFrame, company_inputs: Dict[
         mask &= ~combined.str.contains("electric|gdo|ppa|fotovolta|solar|led|ems|submetering|aire comprimido|variador", regex=True, na=False)
     if not has_heat:
         mask &= ~combined.str.contains("calor/vapor comprado|calor comprado|vapor comprado", regex=True, na=False)
+    if company_has_gdo(company_inputs):
+        mask &= ~combined.str.contains("gdo|garant[ií]a de origen|ppa|power purchase agreement", regex=True, na=False)
 
     return df[mask].copy()
+
+
+def normalize_supply_cost_assumptions(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    combined = _combined_initiative_text(df)
+    ppa_mask = combined.str.contains("ppa|power purchase agreement", regex=True, na=False)
+    zero_opex = pd.to_numeric(df["annual_opex_saving_eur"], errors="coerce").fillna(0.0) == 0
+    df.loc[ppa_mask & zero_opex, "annual_opex_saving_eur"] = np.nan
+    return df
 
 
 def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: int = 8) -> pd.DataFrame:
@@ -1303,6 +1323,7 @@ def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: in
             df[col] = np.nan if col in NUMERIC_COLUMNS else ""
     df = filter_initiatives_by_active_sources(df, company_inputs)
     df = coerce_numeric(df)
+    df = normalize_supply_cost_assumptions(df)
     df["categoria"] = df.apply(classify_initiative_category, axis=1)
     df["priority_weight"] = np.where(df["categoria"] == "estrategica", 1.0, 0.4)
     df["thematic_bucket"] = df.apply(classify_thematic_bucket, axis=1)
@@ -1369,7 +1390,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "initiative_family": "Suministro eléctrico",
             "initiative": "Revisión de comercializadora, factor CNMC y cobertura con GdO/PPA",
             "capex_eur": 5000,
-            "annual_opex_saving_eur": 0.0,
+            "annual_opex_saving_eur": np.nan,
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.5) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 2,
             "strategic_score_1_5": 5,
@@ -1617,6 +1638,7 @@ def generate_ai_initiatives(
         "Usa los inputs de la empresa, el contexto estructurado y supuestos conservadores. "
         "Cada iniciativa debe incluir TODAS las columnas requeridas y opcionales. "
         "Para 'scope' usa 'Alcance 1' o 'Alcance 2'. "
+        "Si la empresa ya declara GdO o gdo_coverage_pct > 0, no propongas PPA, GdO ni garantÃ­as de origen como iniciativa adicional. "
         "No propongas iniciativas ya implantadas (salvo si se pide explícitamente ampliación cuando son parciales). "
         "Primero busca información pública sobre la empresa y su ubicación si la herramienta de búsqueda está disponible. "
         "Usa el nombre de la empresa, la provincia, el código postal, el sector y todos los datos operativos para entender actividad, productos/servicios, procesos, plantas, logística, suministro energético y contexto industrial local, "
@@ -1635,6 +1657,7 @@ def generate_ai_initiatives(
         "- Las cifras deben ser plausibles para la escala de la empresa y consistentes entre sí.\n"
         "- El OPEX puede ser positivo, cero o negativo según el caso; no supongas siempre ahorro.\n"
         "- El ahorro OPEX debe derivar de consumos/energía/precios o quedar en null si no hay base.\n"
+        "- Para PPA o electricidad renovable contratada, no uses OPEX 0 por defecto: si no hay precio contractual o diferencial respecto al precio eléctrico actual, usa null.\n"
         "- La reducción de CO2 debe guardar relación con los consumos y factores de emisión disponibles.\n"
         "- Los meses de implementación deben reflejar complejidad real: quick wins, proyectos de ingeniería, permisos, obra e integración.\n"
         "- Devuelve únicamente los campos definidos en SCHEMA.\n\n"
