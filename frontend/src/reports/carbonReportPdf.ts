@@ -240,12 +240,23 @@ class PdfDocument {
     this.y -= 32;
 
     rows.forEach((item, index) => {
-      this.ensure(76);
-      if (index % 2 === 0) this.rect(MARGIN, this.y - 56, PAGE_WIDTH - MARGIN * 2, 64, "0.985 0.990 0.990");
-      this.write(`Iniciativa Nº ${initiativeNumberFor(item, index)} - ${item.initiative}`, MARGIN + 7, this.y, 8.4, "F2", "0.10 0.14 0.17");
-      this.y -= 13;
-      this.write(`Scope: ${item.scope || "N/D"}   |   Familia: ${item.initiative_family || "N/D"}   |   Fuente: ${item.emission_source || "N/D"}`, MARGIN + 7, this.y, 7.2, "F1", "0.35 0.40 0.43");
-      this.y -= 15;
+      const titleLines = wrap(`Iniciativa Nº ${initiativeNumberFor(item, index)} - ${item.initiative}`, 108);
+      const metaLines = wrap(
+        `Scope: ${item.scope || "N/D"} | Familia: ${item.initiative_family || "N/D"} | Fuente: ${item.emission_source || "N/D"}`,
+        118
+      );
+      const rowHeight = titleLines.length * 11 + metaLines.length * 10 + 36;
+      this.ensure(rowHeight + 10);
+      if (index % 2 === 0) this.rect(MARGIN, this.y - rowHeight + 8, PAGE_WIDTH - MARGIN * 2, rowHeight, "0.985 0.990 0.990");
+      titleLines.forEach((line) => {
+        this.write(line, MARGIN + 7, this.y, 8.4, "F2", "0.10 0.14 0.17");
+        this.y -= 11;
+      });
+      metaLines.forEach((line) => {
+        this.write(line, MARGIN + 7, this.y, 7.2, "F1", "0.35 0.40 0.43");
+        this.y -= 10;
+      });
+      this.y -= 5;
       this.write(`CAPEX: ${formatCurrency(item.capex_eur)}`, MARGIN + 7, this.y, 7.4, "F2");
       this.write(`CO2: ${formatNumber(item.annual_co2_reduction_t)} t/año`, MARGIN + 104, this.y, 7.4, "F2");
       this.write(`OPEX: ${formatCurrency(item.annual_opex_saving_eur)}`, MARGIN + 192, this.y, 7.4, "F2");
