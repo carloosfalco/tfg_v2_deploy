@@ -1253,6 +1253,46 @@ def classify_thematic_bucket(row: pd.Series) -> str:
     return "otras"
 
 
+def filter_initiatives_by_active_sources(df: pd.DataFrame, company_inputs: Dict[str, Any]) -> pd.DataFrame:
+    annual_electricity_mwh = _to_float(company_inputs.get("annual_electricity_mwh"))
+    supplier_electricity_mwh = sum(
+        _to_float(row.get("consumo_mwh")) for row in (company_inputs.get("scope2_supplier_rows") or [])
+    )
+    annual_heat_mwh = _to_float(company_inputs.get("annual_purchased_heat_mwh"))
+    has_stationary = estimate_stationary_fuel_mwh(company_inputs) > 0
+    has_mobile = any(_to_float(row.get("quantity")) > 0 for row in get_mobile_fuel_entries(company_inputs))
+    has_refrigerants = any(_to_float(row.get("quantity")) > 0 for row in get_refrigerant_entries(company_inputs))
+    has_electricity = annual_electricity_mwh > 0 or supplier_electricity_mwh > 0
+    has_heat = annual_heat_mwh > 0
+
+    if df.empty:
+        return df
+
+    combined = (
+        df.get("emission_source", pd.Series("", index=df.index)).fillna("").astype(str)
+        + " "
+        + df.get("initiative_family", pd.Series("", index=df.index)).fillna("").astype(str)
+        + " "
+        + df.get("initiative", pd.Series("", index=df.index)).fillna("").astype(str)
+        + " "
+        + df.get("activity_unit", pd.Series("", index=df.index)).fillna("").astype(str)
+    ).str.lower()
+    mask = pd.Series(True, index=df.index)
+
+    if not has_stationary:
+        mask &= ~combined.str.contains("combusti|caldera|boiler|fuel|combustible", regex=True, na=False)
+    if not has_mobile:
+        mask &= ~combined.str.contains("flota|veh[ií]cul|ruta|eco-driving|litros", regex=True, na=False)
+    if not has_refrigerants:
+        mask &= ~combined.str.contains("refriger|fugitiv|gwp|pca", regex=True, na=False)
+    if not has_electricity:
+        mask &= ~combined.str.contains("electric|gdo|ppa|fotovolta|solar|led|ems|submetering|aire comprimido|variador", regex=True, na=False)
+    if not has_heat:
+        mask &= ~combined.str.contains("calor/vapor comprado|calor comprado|vapor comprado", regex=True, na=False)
+
+    return df[mask].copy()
+
+
 def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: int = 8) -> pd.DataFrame:
     df = normalize_columns(df.copy())
     for col in REQUIRED_COLUMNS:
@@ -1261,6 +1301,7 @@ def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: in
     for col in OPTIONAL_COLUMNS:
         if col not in df.columns:
             df[col] = np.nan if col in NUMERIC_COLUMNS else ""
+    df = filter_initiatives_by_active_sources(df, company_inputs)
     df = coerce_numeric(df)
     df["categoria"] = df.apply(classify_initiative_category, axis=1)
     df["priority_weight"] = np.where(df["categoria"] == "estrategica", 1.0, 0.4)
