@@ -2439,15 +2439,44 @@ table th {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.trace-panel {
+.footprint-summary-panel {
   align-self: start;
   padding: 16px;
-  font-size: 13px;
 }
 
-.trace-panel p {
-  margin: 8px 0 0;
+.footprint-summary-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.footprint-source-card {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.35fr) minmax(0, 1fr);
+  gap: 6px 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.footprint-source-card span {
   color: var(--muted-strong);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.footprint-source-card strong,
+.footprint-source-card p {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.footprint-source-card p {
+  color: var(--ink);
+  font-weight: 800;
 }
 
 .topbar__actions input {

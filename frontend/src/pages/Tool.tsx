@@ -404,7 +404,7 @@ export default function Tool() {
         state.currentStep !== "pestel" &&
         state.currentStep !== "iniciativas" &&
         state.currentStep !== "portafolio" ? (
-          <FootprintOverview footprint={state.footprint} />
+          <FootprintOverview footprint={state.footprint} companyInputs={state.companyInputs} catalogs={catalogs} />
         ) : null}
 
         {["pestel", "iniciativas", "portafolio"].includes(state.currentStep) ? (
