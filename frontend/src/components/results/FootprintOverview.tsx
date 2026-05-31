@@ -177,12 +177,15 @@ export function FootprintOverview({ footprint, companyInputs, catalogs }: Footpr
           <div className="footprint-summary-grid">
             {summaryCards.map((card) => (
               <div className="footprint-source-card" key={card.source}>
-                <span>Fuente</span>
-                <strong>{card.source}</strong>
-                <span>Consumo</span>
-                <p>{card.consumption}</p>
-                <span>Emisión</span>
-                <p>{formatNumber(card.emission)} tCO2e/año</p>
+                <h4>{card.source}</h4>
+                <div>
+                  <span>Consumo</span>
+                  <p>{card.consumption}</p>
+                </div>
+                <div>
+                  <span>Emisión</span>
+                  <p>{formatNumber(card.emission)} tCO2e/año</p>
+                </div>
               </div>
             ))}
           </div>

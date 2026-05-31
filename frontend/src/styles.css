@@ -2452,12 +2452,23 @@ table th {
 
 .footprint-source-card {
   display: grid;
-  grid-template-columns: minmax(82px, 0.35fr) minmax(0, 1fr);
-  gap: 6px 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.footprint-source-card h4 {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.98rem;
+}
+
+.footprint-source-card div {
+  min-width: 0;
 }
 
 .footprint-source-card span {
@@ -2467,7 +2478,6 @@ table th {
   text-transform: uppercase;
 }
 
-.footprint-source-card strong,
 .footprint-source-card p {
   margin: 0;
   min-width: 0;
