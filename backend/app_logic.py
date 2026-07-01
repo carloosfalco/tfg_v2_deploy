@@ -63,6 +63,37 @@ NUMERIC_COLUMNS = [
     "co2_adjusted_t",
 ]
 
+COLUMN_ALIASES = {
+    "alcance": "scope",
+    "fuente_emision": "emission_source",
+    "fuente_de_emision": "emission_source",
+    "familia": "initiative_family",
+    "familia_iniciativa": "initiative_family",
+    "iniciativa": "initiative",
+    "nombre": "initiative",
+    "name": "initiative",
+    "medida": "initiative",
+    "accion": "initiative",
+    "titulo": "initiative",
+    "title": "initiative",
+    "descripcion": "initiative",
+    "description": "initiative",
+    "capex": "capex_eur",
+    "inversion": "capex_eur",
+    "coste_inversion": "capex_eur",
+    "ahorro_opex_anual": "annual_opex_saving_eur",
+    "ahorro_anual_eur": "annual_opex_saving_eur",
+    "reduccion_co2_anual": "annual_co2_reduction_t",
+    "reduccion_anual_co2": "annual_co2_reduction_t",
+    "reduccion_tco2e_anual": "annual_co2_reduction_t",
+    "co2_reduction_t": "annual_co2_reduction_t",
+    "meses_implementacion": "implementation_months",
+    "plazo_meses": "implementation_months",
+    "score_estrategico": "strategic_score_1_5",
+    "puntuacion_estrategica": "strategic_score_1_5",
+    "unidad_actividad": "activity_unit",
+}
+
 STATIONARY_FUEL_MWH_PER_UNIT = {
     "Gasóleo C": 0.0099,
     "Gasóleo B": 0.0099,
@@ -861,7 +892,10 @@ def _gemini_repair_json(api_key: str, model_name: str, raw_text: str, json_shape
     try:
         response = requests.post(url, json=payload, timeout=60)
     except requests.RequestException as exc:
-        raise RuntimeError(f"Gemini investigó, pero no se pudo convertir la respuesta a JSON: {exc}") from exc
+        raise RuntimeError(
+            "Gemini investigó, pero no se pudo convertir la respuesta a JSON. "
+            f"Detalle técnico: {exc.__class__.__name__}"
+        ) from exc
     if response.status_code >= 400:
         raise RuntimeError(
             "Gemini investigó, pero falló la conversión a JSON. "
@@ -906,14 +940,14 @@ def _gemini_generate_json(
     try:
         response = requests.post(url, json=payload, timeout=90)
     except requests.RequestException as exc:
-        raise RuntimeError(f"No se pudo conectar con Gemini: {exc}") from exc
+        raise RuntimeError(f"No se pudo conectar con Gemini. Detalle técnico: {exc.__class__.__name__}") from exc
     if response.status_code >= 400 and use_web_research and not require_web_research and response.status_code != 429:
         payload.pop("tools", None)
         web_tool_enabled = False
         try:
             response = requests.post(url, json=payload, timeout=90)
         except requests.RequestException as exc:
-            raise RuntimeError(f"No se pudo conectar con Gemini: {exc}") from exc
+            raise RuntimeError(f"No se pudo conectar con Gemini. Detalle técnico: {exc.__class__.__name__}") from exc
     if response.status_code >= 400:
         detail = response.text[:1200]
         try:
@@ -977,6 +1011,7 @@ def _gemini_generate_json(
         parsed_data = _gemini_repair_json(api_key, model_name, text, json_shape_hint)
     return {
         "data": parsed_data,
+        "raw_text": text,
         "grounding_used": grounding_used,
         "web_research_requested": web_tool_enabled,
         "grounding_queries": grounding_queries,
@@ -1045,16 +1080,91 @@ def _build_ai_web_research_context(
         }
 
 
-def _extract_initiative_list(data: Any) -> List[Dict[str, Any]]:
-    if isinstance(data, dict):
-        for key in ["initiatives", "iniciativas", "items", "data"]:
-            value = data.get(key)
-            if isinstance(value, list):
-                data = value
-                break
+INITIATIVE_CONTAINER_KEYS = {
+    "initiatives",
+    "iniciativas",
+    "items",
+    "data",
+    "portfolio",
+    "cartera",
+    "initiatives_final",
+    "final_initiatives",
+    "medidas",
+    "acciones",
+    "recommendations",
+    "recomendaciones",
+}
+
+
+INITIATIVE_FIELD_KEYS = {
+    "id",
+    "scope",
+    "alcance",
+    "emission_source",
+    "fuente_emision",
+    "initiative_family",
+    "familia",
+    "initiative",
+    "iniciativa",
+    "medida",
+    "nombre",
+    "descripcion",
+    "description",
+    "capex_eur",
+    "capex",
+    "annual_opex_saving_eur",
+    "annual_co2_reduction_t",
+    "implementation_months",
+    "strategic_score_1_5",
+}
+
+
+def _looks_like_initiative_dict(item: Dict[str, Any]) -> bool:
+    keys = {_normalize_key(key) for key in item.keys()}
+    return bool(keys & INITIATIVE_FIELD_KEYS)
+
+
+def _rows_from_possible_initiative_list(data: Any, from_container_key: bool = False) -> Optional[List[Dict[str, Any]]]:
     if not isinstance(data, list):
-        raise RuntimeError("La salida de Gemini para iniciativas debe ser una lista JSON.")
-    return [item for item in data if isinstance(item, dict)]
+        return None
+    dict_rows = [item for item in data if isinstance(item, dict)]
+    if dict_rows and (from_container_key or any(_looks_like_initiative_dict(item) for item in dict_rows)):
+        return dict_rows
+    if from_container_key:
+        text_rows = [str(item).strip() for item in data if str(item).strip()]
+        if text_rows:
+            return [{"initiative": text} for text in text_rows]
+    return None
+
+
+def _extract_initiative_list(data: Any) -> List[Dict[str, Any]]:
+    def walk(node: Any, from_container_key: bool = False, depth: int = 0) -> Optional[List[Dict[str, Any]]]:
+        if depth > 6:
+            return None
+        rows = _rows_from_possible_initiative_list(node, from_container_key=from_container_key)
+        if rows is not None:
+            return rows
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if _normalize_key(key) in INITIATIVE_CONTAINER_KEYS:
+                    found = walk(value, from_container_key=True, depth=depth + 1)
+                    if found is not None:
+                        return found
+            for value in node.values():
+                found = walk(value, from_container_key=False, depth=depth + 1)
+                if found is not None:
+                    return found
+        if isinstance(node, list):
+            for item in node:
+                found = walk(item, from_container_key=False, depth=depth + 1)
+                if found is not None:
+                    return found
+        return None
+
+    rows = walk(data, from_container_key=isinstance(data, list))
+    if rows is None:
+        raise RuntimeError("La salida de Gemini para iniciativas debe contener una lista JSON de iniciativas.")
+    return rows
 
 
 def generate_ai_pestel(company: Dict[str, Any], footprint: Dict[str, Any], api_key: str, model: str) -> Dict[str, Any]:
@@ -1204,7 +1314,10 @@ def generate_ai_pestel(company: Dict[str, Any], footprint: Dict[str, Any], api_k
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df.columns = [str(col).strip().lower() for col in df.columns]
+    df.columns = [_normalize_key(str(col).strip()) for col in df.columns]
+    for source_col, target_col in COLUMN_ALIASES.items():
+        if source_col in df.columns and target_col not in df.columns:
+            df[target_col] = df[source_col]
     return df
 
 
@@ -1253,66 +1366,6 @@ def classify_thematic_bucket(row: pd.Series) -> str:
     return "otras"
 
 
-def _combined_initiative_text(df: pd.DataFrame) -> pd.Series:
-    return (
-        df.get("emission_source", pd.Series("", index=df.index)).fillna("").astype(str)
-        + " "
-        + df.get("initiative_family", pd.Series("", index=df.index)).fillna("").astype(str)
-        + " "
-        + df.get("initiative", pd.Series("", index=df.index)).fillna("").astype(str)
-        + " "
-        + df.get("activity_unit", pd.Series("", index=df.index)).fillna("").astype(str)
-    ).str.lower()
-
-
-def company_has_gdo(company_inputs: Dict[str, Any]) -> bool:
-    return _implemented_status(company_inputs, "GdO") == "yes" or _to_float(company_inputs.get("gdo_coverage_pct")) > 0
-
-
-def filter_initiatives_by_active_sources(df: pd.DataFrame, company_inputs: Dict[str, Any]) -> pd.DataFrame:
-    annual_electricity_mwh = _to_float(company_inputs.get("annual_electricity_mwh"))
-    supplier_electricity_mwh = sum(
-        _to_float(row.get("consumo_mwh")) for row in (company_inputs.get("scope2_supplier_rows") or [])
-    )
-    annual_heat_mwh = _to_float(company_inputs.get("annual_purchased_heat_mwh"))
-    has_stationary = estimate_stationary_fuel_mwh(company_inputs) > 0
-    has_mobile = any(_to_float(row.get("quantity")) > 0 for row in get_mobile_fuel_entries(company_inputs))
-    has_refrigerants = any(_to_float(row.get("quantity")) > 0 for row in get_refrigerant_entries(company_inputs))
-    has_electricity = annual_electricity_mwh > 0 or supplier_electricity_mwh > 0
-    has_heat = annual_heat_mwh > 0
-
-    if df.empty:
-        return df
-
-    combined = _combined_initiative_text(df)
-    mask = pd.Series(True, index=df.index)
-
-    if not has_stationary:
-        mask &= ~combined.str.contains("combusti|caldera|boiler|fuel|combustible", regex=True, na=False)
-    if not has_mobile:
-        mask &= ~combined.str.contains("flota|veh[ií]cul|ruta|eco-driving|litros", regex=True, na=False)
-    if not has_refrigerants:
-        mask &= ~combined.str.contains("refriger|fugitiv|gwp|pca", regex=True, na=False)
-    if not has_electricity:
-        mask &= ~combined.str.contains("electric|gdo|ppa|fotovolta|solar|led|ems|submetering|aire comprimido|variador", regex=True, na=False)
-    if not has_heat:
-        mask &= ~combined.str.contains("calor/vapor comprado|calor comprado|vapor comprado", regex=True, na=False)
-    if company_has_gdo(company_inputs):
-        mask &= ~combined.str.contains("gdo|garant[ií]a de origen|ppa|power purchase agreement", regex=True, na=False)
-
-    return df[mask].copy()
-
-
-def normalize_supply_cost_assumptions(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    combined = _combined_initiative_text(df)
-    ppa_mask = combined.str.contains("ppa|power purchase agreement", regex=True, na=False)
-    zero_opex = pd.to_numeric(df["annual_opex_saving_eur"], errors="coerce").fillna(0.0) == 0
-    df.loc[ppa_mask & zero_opex, "annual_opex_saving_eur"] = np.nan
-    return df
-
-
 def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: int = 8) -> pd.DataFrame:
     df = normalize_columns(df.copy())
     for col in REQUIRED_COLUMNS:
@@ -1321,9 +1374,7 @@ def finalize_initiatives(df: pd.DataFrame, company_inputs: Dict[str, Any], n: in
     for col in OPTIONAL_COLUMNS:
         if col not in df.columns:
             df[col] = np.nan if col in NUMERIC_COLUMNS else ""
-    df = filter_initiatives_by_active_sources(df, company_inputs)
     df = coerce_numeric(df)
-    df = normalize_supply_cost_assumptions(df)
     df["categoria"] = df.apply(classify_initiative_category, axis=1)
     df["priority_weight"] = np.where(df["categoria"] == "estrategica", 1.0, 0.4)
     df["thematic_bucket"] = df.apply(classify_thematic_bucket, axis=1)
@@ -1390,7 +1441,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             "initiative_family": "Suministro eléctrico",
             "initiative": "Revisión de comercializadora, factor CNMC y cobertura con GdO/PPA",
             "capex_eur": 5000,
-            "annual_opex_saving_eur": np.nan,
+            "annual_opex_saving_eur": 0.0,
             "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.5) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
             "implementation_months": 2,
             "strategic_score_1_5": 5,
@@ -1634,11 +1685,10 @@ def generate_ai_initiatives(
         "Si la base cuantitativa es insuficiente, usa null antes que inventar."
     )
     user_prompt = (
-        "Genera exactamente N iniciativas en JSON (lista de objetos) siguiendo este esquema. "
+        f"Genera exactamente {n} iniciativas en JSON (lista de objetos) siguiendo este esquema. "
         "Usa los inputs de la empresa, el contexto estructurado y supuestos conservadores. "
         "Cada iniciativa debe incluir TODAS las columnas requeridas y opcionales. "
         "Para 'scope' usa 'Alcance 1' o 'Alcance 2'. "
-        "Si la empresa ya declara GdO o gdo_coverage_pct > 0, no propongas PPA, GdO ni garantÃ­as de origen como iniciativa adicional. "
         "No propongas iniciativas ya implantadas (salvo si se pide explícitamente ampliación cuando son parciales). "
         "Primero busca información pública sobre la empresa y su ubicación si la herramienta de búsqueda está disponible. "
         "Usa el nombre de la empresa, la provincia, el código postal, el sector y todos los datos operativos para entender actividad, productos/servicios, procesos, plantas, logística, suministro energético y contexto industrial local, "
@@ -1657,11 +1707,12 @@ def generate_ai_initiatives(
         "- Las cifras deben ser plausibles para la escala de la empresa y consistentes entre sí.\n"
         "- El OPEX puede ser positivo, cero o negativo según el caso; no supongas siempre ahorro.\n"
         "- El ahorro OPEX debe derivar de consumos/energía/precios o quedar en null si no hay base.\n"
-        "- Para PPA o electricidad renovable contratada, no uses OPEX 0 por defecto: si no hay precio contractual o diferencial respecto al precio eléctrico actual, usa null.\n"
         "- La reducción de CO2 debe guardar relación con los consumos y factores de emisión disponibles.\n"
         "- Los meses de implementación deben reflejar complejidad real: quick wins, proyectos de ingeniería, permisos, obra e integración.\n"
         "- Devuelve únicamente los campos definidos en SCHEMA.\n\n"
         f"N = {n}\n"
+        f"CONTRATO_DE_SALIDA: usa busqueda web para benchmarking y devuelve una lista JSON directa con exactamente {n} objetos; "
+        "el primer caracter debe ser '[' y el ultimo ']'. No uses markdown, comentarios ni objeto contenedor.\n"
         f"SCHEMA: {json.dumps(schema_note, ensure_ascii=False)}\n"
         f"WEB_RESEARCH_CONTEXT: {json.dumps(research.get('data', {}), ensure_ascii=False)}\n"
         f"COMPANY_CONTEXT: {json.dumps(context, ensure_ascii=False)}\n"
@@ -1676,6 +1727,7 @@ def generate_ai_initiatives(
     retry_note = ""
     json_shape_hint = '[{"id":"I1","initiative":"...","scope":"Alcance 1","emission_source":"...","initiative_family":"...","categoria":"quick_win","capex_eur":0,"annual_opex_saving_eur":0,"annual_co2_reduction_t":0,"co2_adjusted_t":0,"implementation_months":0,"strategic_score_1_5":3,"activity_unit":"..."}]'
     errors: List[str] = []
+    raw_generation_texts: List[str] = []
     research_grounding_used = bool(research.get("grounding_used"))
     for attempt in range(1, 4):
         attempt_prompt = user_prompt + retry_note
@@ -1689,10 +1741,61 @@ def generate_ai_initiatives(
                 require_web_research=False,
                 json_shape_hint=json_shape_hint,
             )
+            if str(result.get("raw_text") or "").strip():
+                raw_generation_texts.append(str(result.get("raw_text")))
             initiative_rows = _extract_initiative_list(result["data"])
             ai_df = finalize_initiatives(pd.DataFrame(initiative_rows), company, n=n)
             if len(ai_df) == n:
                 break
+            if len(ai_df) < n:
+                missing = n - len(ai_df)
+                completion_prompt = (
+                    "Completa una cartera de iniciativas de descarbonizacion con benchmarking web.\n"
+                    f"Ya hay {len(ai_df)} iniciativas validas, pero se requieren exactamente {n}. "
+                    f"Realiza busqueda web adicional de benchmarking y devuelve SOLO una lista JSON con exactamente {missing} "
+                    "iniciativas NUEVAS, distintas de las ya existentes y compatibles con la empresa. "
+                    "No repitas medidas, no uses markdown y no incluyas objeto contenedor. "
+                    "El primer caracter debe ser '[' y el ultimo ']'.\n\n"
+                    f"SCHEMA: {json.dumps(schema_note, ensure_ascii=False)}\n"
+                    f"WEB_RESEARCH_CONTEXT: {json.dumps(research.get('data', {}), ensure_ascii=False)}\n"
+                    f"COMPANY_CONTEXT: {json.dumps(context, ensure_ascii=False)}\n"
+                    f"EMISSIONS_INPUT_CONTEXT: {json.dumps(emissions_context, ensure_ascii=False)}\n"
+                    f"PESTEL_CONTEXT: {json.dumps(pestel_context, ensure_ascii=False)}\n"
+                    f"COMPANY_INPUTS: {json.dumps(company, ensure_ascii=False)}\n"
+                    f"FOOTPRINT: {json.dumps(footprint, ensure_ascii=False)}\n"
+                    f"INICIATIVAS_YA_EXISTENTES: {json.dumps(initiative_rows, ensure_ascii=False)}\n"
+                )
+                try:
+                    completion = _gemini_generate_json(
+                        api_key,
+                        model,
+                        system_prompt,
+                        completion_prompt,
+                        use_web_research=True,
+                        require_web_research=False,
+                        json_shape_hint=json_shape_hint,
+                    )
+                    if str(completion.get("raw_text") or "").strip():
+                        raw_generation_texts.append(str(completion.get("raw_text")))
+                    completion_rows = _extract_initiative_list(completion["data"])
+                    merged_rows = [*initiative_rows, *completion_rows]
+                    ai_df = finalize_initiatives(pd.DataFrame(merged_rows), company, n=n)
+                    result = {
+                        **result,
+                        "grounding_used": bool(result.get("grounding_used") or completion.get("grounding_used")),
+                        "grounding_queries": [
+                            *result.get("grounding_queries", []),
+                            *completion.get("grounding_queries", []),
+                        ],
+                        "grounding_sources": [
+                            *result.get("grounding_sources", []),
+                            *completion.get("grounding_sources", []),
+                        ],
+                    }
+                    if len(ai_df) == n:
+                        break
+                except Exception as completion_exc:
+                    errors.append(f"Intento {attempt} completado fallido: {completion_exc}")
             errors.append(
                 f"Intento {attempt}: Gemini devolvió {len(ai_df)} iniciativas "
                 f"y grounding_used={bool(result.get('grounding_used') or research_grounding_used)}."
@@ -1711,6 +1814,51 @@ def generate_ai_initiatives(
             f"La respuesta debe empezar por '[' y terminar por ']'. Debe contener exactamente {n} iniciativas "
             "distintas y completas. No devuelvas menos filas ni texto fuera del JSON.\n"
         )
+    if result is not None and len(ai_df) != n and bool(result.get("grounding_used") or research.get("grounding_used")):
+        try:
+            synthesis_prompt = (
+                "Sintetiza la cartera final de iniciativas usando SOLO el material investigado con busqueda web "
+                "y los datos estructurados. No inventes hechos nuevos fuera del contexto dado.\n"
+                f"Devuelve una lista JSON directa con exactamente {n} objetos completos. "
+                "No uses markdown, no incluyas texto fuera del JSON y no uses objeto contenedor.\n\n"
+                f"SCHEMA: {json.dumps(schema_note, ensure_ascii=False)}\n"
+                f"WEB_RESEARCH_CONTEXT: {json.dumps(research.get('data', {}), ensure_ascii=False)}\n"
+                f"GROUNDING_QUERIES: {json.dumps(list(dict.fromkeys([*research.get('grounding_queries', []), *result.get('grounding_queries', [])])), ensure_ascii=False)}\n"
+                f"GROUNDING_SOURCES: {json.dumps([*research.get('grounding_sources', []), *result.get('grounding_sources', [])], ensure_ascii=False)}\n"
+                f"TEXTOS_GENERADOS_CON_BUSQUEDA_WEB: {json.dumps(raw_generation_texts[-6:], ensure_ascii=False)}\n"
+                f"COMPANY_CONTEXT: {json.dumps(context, ensure_ascii=False)}\n"
+                f"EMISSIONS_INPUT_CONTEXT: {json.dumps(emissions_context, ensure_ascii=False)}\n"
+                f"PESTEL_CONTEXT: {json.dumps(pestel_context, ensure_ascii=False)}\n"
+                f"COMPANY_INPUTS: {json.dumps(company, ensure_ascii=False)}\n"
+                f"FOOTPRINT: {json.dumps(footprint, ensure_ascii=False)}\n"
+            )
+            synthesis = _gemini_generate_json(
+                api_key,
+                model,
+                system_prompt,
+                synthesis_prompt,
+                use_web_research=False,
+                require_web_research=False,
+                json_shape_hint=json_shape_hint,
+            )
+            synthesis_rows = _extract_initiative_list(synthesis["data"])
+            ai_df = finalize_initiatives(pd.DataFrame(synthesis_rows), company, n=n)
+            result = {
+                **result,
+                "grounding_used": True,
+                "grounding_queries": [
+                    *result.get("grounding_queries", []),
+                    *synthesis.get("grounding_queries", []),
+                ],
+                "grounding_sources": [
+                    *result.get("grounding_sources", []),
+                    *synthesis.get("grounding_sources", []),
+                ],
+            }
+            if len(ai_df) != n:
+                errors.append(f"Sintesis final: Gemini devolvio {len(ai_df)} iniciativas y se necesitan exactamente {n}.")
+        except Exception as synthesis_exc:
+            errors.append(f"Sintesis final fallida: {synthesis_exc}")
     if result is None or len(ai_df) != n:
         raise RuntimeError(
             "Gemini no devolvió una cartera válida tras varios reintentos. "
