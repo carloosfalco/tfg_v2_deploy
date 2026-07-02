@@ -57,6 +57,7 @@ export interface CompanyInputs {
   has_submetering: boolean;
   has_energy_audit: boolean;
   implemented_measures: Record<string, MeasureStatus>;
+  implemented_other_measures?: string;
 }
 
 export interface FootprintResult {

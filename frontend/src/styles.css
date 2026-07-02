@@ -48,12 +48,14 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-width: 0;
   padding: 12px 14px;
@@ -66,9 +68,14 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: rgba(13, 107, 95, 0.45);
   box-shadow: 0 0 0 4px rgba(13, 107, 95, 0.12);
+}
+
+textarea {
+  resize: vertical;
 }
 
 button {

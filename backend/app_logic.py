@@ -137,25 +137,65 @@ MOBILE_FUEL_MWH_PER_UNIT = {
 }
 
 MEASURE_LABELS = [
-    "LED",
-    "GdO",
-    "Paneles solares",
-    "Flota eléctrica",
-    "Variadores de frecuencia",
-    "EMS/submetering",
-    "Recuperación de calor",
-    "Programa de fugas de aire comprimido",
+    "Iluminación LED",
+    "GdO para energía eléctrica",
+    "Autoconsumo fotovoltaico / paneles solares",
+    "Flota de vehículos eléctricos",
+    "Variadores de frecuencia en motores",
+    "Sistema de gestión energética y submetering",
+    "Recuperación de calor residual",
+    "Control de fugas de gases refrigerantes",
 ]
 
 IMPLEMENTED_MEASURE_BLOCKLIST = {
-    "LED": ["led", "iluminacion", "lighting", "luminaria"],
-    "GdO": ["gdo", "garantia de origen", "garantias de origen", "energia renovable certificada"],
-    "Paneles solares": ["panel solar", "paneles solares", "fotovolta", "autoconsumo", "solar pv", "cubierta solar"],
-    "Flota electrica": ["flota electr", "vehiculo electr", "vehiculos electr", "recarga", "ev"],
-    "Variadores de frecuencia": ["variador", "vfd", "frecuencia", "velocidad variable"],
-    "EMS/submetering": ["ems", "submetering", "submedicion", "monitorizacion energetica", "medicion energetica"],
-    "Recuperacion de calor": ["recuperacion de calor", "calor residual", "waste heat"],
-    "Programa de fugas de aire comprimido": ["fugas de aire", "aire comprimido", "compressed air leak"],
+    "Iluminación LED": ["led", "iluminacion", "lighting", "luminaria", "relamping"],
+    "GdO para energía eléctrica": [
+        "gdo",
+        "garantia de origen",
+        "garantias de origen",
+        "energia renovable certificada",
+        "electricidad renovable",
+        "electricidad certificada",
+    ],
+    "Autoconsumo fotovoltaico / paneles solares": [
+        "panel solar",
+        "paneles solares",
+        "fotovolta",
+        "autoconsumo",
+        "solar pv",
+        "cubierta solar",
+    ],
+    "Flota de vehículos eléctricos": [
+        "flota electr",
+        "vehiculo electr",
+        "vehiculos electr",
+        "recarga",
+        "electrificacion de flota",
+        "ev",
+    ],
+    "Variadores de frecuencia en motores": ["variador", "vfd", "frecuencia", "velocidad variable"],
+    "Sistema de gestión energética y submetering": [
+        "ems",
+        "submetering",
+        "submedicion",
+        "monitorizacion energetica",
+        "medicion energetica",
+        "gestion energetica",
+    ],
+    "Recuperación de calor residual": ["recuperacion de calor", "calor residual", "waste heat"],
+    "Control de fugas de gases refrigerantes": [
+        "fuga refrigerante",
+        "fugas refrigerantes",
+        "gas refrigerante",
+        "gases refrigerantes",
+        "refrigerante",
+        "hfc",
+        "pca",
+        "gwp",
+        "bajo pca",
+        "menor pca",
+        "low gwp",
+    ],
 }
 
 
@@ -172,6 +212,26 @@ def _normalize_key(text: str) -> str:
         .replace("(", "")
         .replace(")", "")
     )
+
+
+IMPLEMENTED_MEASURE_ALIASES = {
+    _normalize_key("LED"): "Iluminación LED",
+    _normalize_key("Iluminación LED"): "Iluminación LED",
+    _normalize_key("GdO"): "GdO para energía eléctrica",
+    _normalize_key("GdO para energía eléctrica"): "GdO para energía eléctrica",
+    _normalize_key("Paneles solares"): "Autoconsumo fotovoltaico / paneles solares",
+    _normalize_key("Autoconsumo fotovoltaico / paneles solares"): "Autoconsumo fotovoltaico / paneles solares",
+    _normalize_key("Flota eléctrica"): "Flota de vehículos eléctricos",
+    _normalize_key("Flota de vehículos eléctricos"): "Flota de vehículos eléctricos",
+    _normalize_key("Variadores de frecuencia"): "Variadores de frecuencia en motores",
+    _normalize_key("Variadores de frecuencia en motores"): "Variadores de frecuencia en motores",
+    _normalize_key("EMS/submetering"): "Sistema de gestión energética y submetering",
+    _normalize_key("Sistema de gestión energética y submetering"): "Sistema de gestión energética y submetering",
+    _normalize_key("Recuperación de calor"): "Recuperación de calor residual",
+    _normalize_key("Recuperación de calor residual"): "Recuperación de calor residual",
+    _normalize_key("Programa de fugas de aire comprimido"): "Control de fugas de gases refrigerantes",
+    _normalize_key("Control de fugas de gases refrigerantes"): "Control de fugas de gases refrigerantes",
+}
 
 
 def _repair_mojibake(text: str) -> str:
@@ -757,6 +817,7 @@ def build_ai_company_context(company_inputs: Dict[str, Any], footprint: Optional
         "annual_fuel_mwh": annual_fuel_mwh,
         "size_signal": size_band,
         "implemented_measures": company_inputs.get("implemented_measures") or {},
+        "implemented_other_measures": company_inputs.get("implemented_other_measures") or "",
         "footprint_total_t": _to_float((footprint or {}).get("total_t"), default=np.nan),
     }
 
@@ -1342,12 +1403,30 @@ def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
 
 def _implemented_status(company: Dict[str, Any], label: str) -> str:
     implemented = company.get("implemented_measures") or {}
-    raw = _normalize_key(_repair_mojibake(str(implemented.get(label, "No"))))
+    requested_label = IMPLEMENTED_MEASURE_ALIASES.get(_normalize_key(_repair_mojibake(label)), label)
+    raw_value = "No"
+    for raw_label, raw_status in implemented.items():
+        catalog_label = IMPLEMENTED_MEASURE_ALIASES.get(_normalize_key(_repair_mojibake(str(raw_label))), raw_label)
+        if catalog_label == requested_label:
+            raw_value = raw_status
+            break
+    raw = _normalize_key(_repair_mojibake(str(raw_value)))
     if raw in {"si", "yes", "true", "1"}:
         return "yes"
     if raw in {"parcial", "partial"}:
         return "partial"
     return "no"
+
+
+def _implemented_other_keywords(company: Dict[str, Any]) -> List[str]:
+    raw = _repair_mojibake(str(company.get("implemented_other_measures") or ""))
+    chunks = [part.strip() for part in re.split(r"[\n\r;]+|,\s*(?=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])", raw) if part.strip()]
+    keywords: List[str] = []
+    for chunk in chunks:
+        normalized = _normalize_key(chunk)
+        if len(normalized) >= 4:
+            keywords.append(chunk)
+    return keywords
 
 
 def implemented_measure_blocklist(company: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -1359,9 +1438,12 @@ def implemented_measure_blocklist(company: Dict[str, Any]) -> Dict[str, List[str
         if status not in {"si", "yes", "true", "1"}:
             continue
         normalized_label = _normalize_key(_repair_mojibake(str(raw_label)))
-        catalog_label = normalized_catalog.get(normalized_label)
+        catalog_label = IMPLEMENTED_MEASURE_ALIASES.get(normalized_label) or normalized_catalog.get(normalized_label)
         if catalog_label:
             blocked[catalog_label] = IMPLEMENTED_MEASURE_BLOCKLIST[catalog_label]
+    other_keywords = _implemented_other_keywords(company)
+    if other_keywords:
+        blocked["Otras medidas ya implantadas por el usuario"] = other_keywords
     return blocked
 
 
@@ -1401,7 +1483,7 @@ def classify_initiative_category(row: pd.Series) -> str:
     name = str(row.get("initiative") or "").lower()
     capex = _to_float(row.get("capex_eur"))
     implementation = _to_float(row.get("implementation_months"))
-    quick_keywords = ["gdo", "led", "aire comprimido", "rutas", "eco-driving", "ems", "submetering"]
+    quick_keywords = ["gdo", "led", "refrigerante", "rutas", "eco-driving", "ems", "submetering"]
     if any(keyword in name for keyword in quick_keywords):
         return "quick_win"
     if capex <= 50000 and 0 < implementation <= 3:
@@ -1417,7 +1499,7 @@ def classify_thematic_bucket(row: pd.Series) -> str:
         return "electrificacion"
     if any(key in text for key in ["vfd", "led", "caldera", "boiler", "efficiency"]):
         return "eficiencia"
-    if any(key in text for key in ["ems", "submetering", "ruta", "aire comprimido"]):
+    if any(key in text for key in ["ems", "submetering", "ruta", "refrigerante"]):
         return "operativa"
     if any(key in text for key in ["gdo", "ppa", "supply", "supplier"]):
         return "suministro"
@@ -1492,7 +1574,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
         rows.append(payload)
 
     add_if_allowed(
-        "GdO",
+        "GdO para energía eléctrica",
         {
             "scope": "Scope 2",
             "emission_source": "Electricidad comprada",
@@ -1508,7 +1590,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
     )
 
     add_if_allowed(
-        "EMS/submetering",
+        "Sistema de gestión energética y submetering",
         {
             "scope": "Scope 2",
             "emission_source": "Electricidad comprada",
@@ -1524,7 +1606,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
     )
 
     add_if_allowed(
-        "LED",
+        "Iluminación LED",
         {
             "scope": "Scope 2",
             "emission_source": "Electricidad comprada",
@@ -1540,7 +1622,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
     )
 
     add_if_allowed(
-        "Variadores de frecuencia",
+        "Variadores de frecuencia en motores",
         {
             "scope": "Scope 2",
             "emission_source": "Electricidad comprada",
@@ -1556,7 +1638,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
     )
 
     add_if_allowed(
-        "Paneles solares",
+        "Autoconsumo fotovoltaico / paneles solares",
         {
             "scope": "Scope 2",
             "emission_source": "Electricidad comprada",
@@ -1572,18 +1654,18 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
     )
 
     add_if_allowed(
-        "Programa de fugas de aire comprimido",
+        "Control de fugas de gases refrigerantes",
         {
-            "scope": "Scope 2",
-            "emission_source": "Electricidad comprada",
-            "initiative_family": "Utilities",
-            "initiative": "Programa de fugas de aire comprimido y optimización de presión",
+            "scope": "Scope 1",
+            "emission_source": "Emisiones fugitivas de refrigerantes",
+            "initiative_family": "Refrigerantes",
+            "initiative": "Programa de detección y reparación de fugas de gases refrigerantes",
             "capex_eur": 60000,
-            "annual_opex_saving_eur": (annual_electricity_mwh * electricity_price * 0.01) if _ok_num(annual_electricity_mwh) and _ok_num(electricity_price) else np.nan,
-            "annual_co2_reduction_t": (annual_electricity_mwh * elec_factor * 0.01) if _ok_num(annual_electricity_mwh) and _ok_num(elec_factor) else np.nan,
+            "annual_opex_saving_eur": 0.0,
+            "annual_co2_reduction_t": (footprint.get("scope1_fugitive_t", np.nan) * 0.2) if footprint and _ok_num(footprint.get("scope1_fugitive_t")) else np.nan,
             "implementation_months": 2,
-            "strategic_score_1_5": 2,
-            "activity_unit": "kWh",
+            "strategic_score_1_5": 3,
+            "activity_unit": "kg refrigerante",
         },
     )
 
@@ -1603,7 +1685,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             }
         )
         add_if_allowed(
-            "Recuperación de calor",
+            "Recuperación de calor residual",
             {
                 "scope": "Scope 1",
                 "emission_source": "Combustión fija",
@@ -1648,7 +1730,7 @@ def propose_initiatives(company: Dict[str, Any], footprint: Optional[Dict[str, A
             }
         )
         add_if_allowed(
-            "Flota eléctrica",
+            "Flota de vehículos eléctricos",
             {
                 "scope": "Scope 1",
                 "emission_source": "Flota móvil",
@@ -1761,7 +1843,7 @@ def generate_ai_initiatives(
         "- Contrasta el PESTEL con FOOTPRINT y EMISSIONS_INPUT_CONTEXT: una oportunidad externa solo debe generar una iniciativa si tiene encaje con las fuentes emisoras reales o con datos operativos plausibles.\n"
         "- Relaciona las iniciativas con las fuentes emisoras reales observadas en combustión fija, flota, refrigerantes, electricidad y calor/vapor comprado.\n"
         "- Filtro obligatorio de medidas implantadas: antes de responder, elimina cualquier propuesta cuyo nombre, familia, fuente, unidad o descripción coincida semánticamente con MEDIDAS_YA_IMPLANTADAS_BLOQUEADAS.\n"
-        "- Ejemplos de bloqueo: si 'Paneles solares' está implantado, no propongas fotovoltaica, autoconsumo, ampliación solar ni cubiertas solares; si 'GdO' está implantado, no propongas garantías de origen ni electricidad certificada; si 'LED' está implantado, no propongas relamping ni iluminación eficiente.\n"
+        "- Ejemplos de bloqueo: si 'Autoconsumo fotovoltaico / paneles solares' está implantado, no propongas fotovoltaica, autoconsumo, ampliación solar ni cubiertas solares; si 'GdO para energía eléctrica' está implantado, no propongas garantías de origen ni electricidad certificada; si 'Iluminación LED' está implantada, no propongas relamping ni iluminación eficiente; si 'Control de fugas de gases refrigerantes' está implantado, no propongas detección, reparación, monitorización o sustitución relacionada con fugas de refrigerantes.\n"
         f"- Debe haber exactamente {n} iniciativas finales.\n"
         "- Clasifica cada iniciativa como quick_win o estrategica.\n"
         "- Favorece estrategica frente a quick_win: usa peso 1.0 para estrategica y 0.4 para quick_win.\n"

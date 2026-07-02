@@ -4,14 +4,14 @@ import type { CompanyInputs, MeasureStatus } from "../../types";
 import { parseLocaleNumberInput } from "../../utils/numberInput";
 
 const measures = [
-  "LED",
-  "GdO",
-  "Paneles solares",
-  "Flota eléctrica",
-  "Variadores de frecuencia",
-  "EMS/submetering",
-  "Recuperación de calor",
-  "Programa de fugas de aire comprimido",
+  "Iluminación LED",
+  "GdO para energía eléctrica",
+  "Autoconsumo fotovoltaico / paneles solares",
+  "Flota de vehículos eléctricos",
+  "Variadores de frecuencia en motores",
+  "Sistema de gestión energética y submetering",
+  "Recuperación de calor residual",
+  "Control de fugas de gases refrigerantes",
 ] as const;
 
 type CompanyFormValues = Pick<
@@ -25,6 +25,7 @@ type CompanyFormValues = Pick<
   | "inventory_year"
   | "electricity_price_eur_mwh"
   | "roof_area_m2"
+  | "implemented_other_measures"
 > & {
   implemented_measures: Record<string, MeasureStatus>;
 };
@@ -50,6 +51,7 @@ export function CompanyForm({
       electricity_price_eur_mwh: value.electricity_price_eur_mwh || undefined,
       roof_area_m2: value.roof_area_m2 || undefined,
       implemented_measures: value.implemented_measures,
+      implemented_other_measures: value.implemented_other_measures ?? "",
     },
   });
 
@@ -174,6 +176,14 @@ export function CompanyForm({
             </label>
           ))}
         </div>
+        <label>
+          <span>Otras medidas ya implantadas</span>
+          <textarea
+            {...register("implemented_other_measures")}
+            rows={3}
+            placeholder="Ej. sustitución de calderas, compra de biometano, refrigerantes de bajo PCA..."
+          />
+        </label>
       </div>
 
       <div className="form-actions">
