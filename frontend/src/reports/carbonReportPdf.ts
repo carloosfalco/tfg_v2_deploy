@@ -330,6 +330,49 @@ function mainEmissionSource(state: AppState) {
   return `${name}: ${formatNumber(value)} tCO2e`;
 }
 
+function sourceSummaryRows(state: AppState) {
+  const footprint = state.footprint;
+  const company = state.companyInputs;
+  if (!footprint) return [];
+
+  const rows: string[][] = [];
+  const stationary = company.stationary_fuels
+    .filter((entry) => entry.fuel_key && Number(entry.quantity) > 0)
+    .map((entry) => formatNumber(entry.quantity, 0));
+  if (stationary.length) {
+    rows.push(["Combustión fija", `${stationary.join(" · ")} ud.`, `${formatNumber(footprint.scope1_stationary_t, 2)} tCO2e/año`]);
+  }
+
+  const mobile = company.mobile_fuels
+    .filter((entry) => entry.fuel_key && Number(entry.quantity) > 0)
+    .map((entry) => formatNumber(entry.quantity, 0));
+  if (mobile.length) {
+    rows.push(["Flota móvil", `${mobile.join(" · ")} ud.`, `${formatNumber(footprint.scope1_fleet_t, 2)} tCO2e/año`]);
+  }
+
+  const refrigerants = company.refrigerants
+    .filter((entry) => entry.name && Number(entry.quantity) > 0)
+    .map((entry) => `${formatNumber(entry.quantity, 0)} kg`);
+  if (refrigerants.length) {
+    rows.push(["Refrigerantes", refrigerants.join(" · "), `${formatNumber(footprint.scope1_fugitive_t, 2)} tCO2e/año`]);
+  }
+
+  const supplierElectricityMwh = company.scope2_supplier_rows.reduce(
+    (sum, row) => sum + (Number(row.consumo_mwh) > 0 ? Number(row.consumo_mwh) : 0),
+    0
+  );
+  const electricityMwh = supplierElectricityMwh > 0 ? supplierElectricityMwh : company.annual_electricity_mwh;
+  if (Number(electricityMwh) > 0) {
+    rows.push(["Electricidad comprada", `${formatNumber(electricityMwh, 0)} MWh/año`, `${formatNumber(footprint.scope2_elec_t, 2)} tCO2e/año`]);
+  }
+
+  if (Number(company.annual_purchased_heat_mwh) > 0) {
+    rows.push(["Calor/vapor comprado", `${formatNumber(company.annual_purchased_heat_mwh, 0)} MWh/año`, `${formatNumber(footprint.scope2_heat_t, 2)} tCO2e/año`]);
+  }
+
+  return rows;
+}
+
 export function buildCarbonReportPdf(state: AppState) {
   const company = state.companyInputs;
   const docTitle = `Informe de descarbonización - ${company.company_name || "empresa"}`;
@@ -375,14 +418,8 @@ export function buildCarbonReportPdf(state: AppState) {
       Object.entries(state.footprint.breakdown ?? {}).map(([label, value]) => [label, formatNumber(value)]),
       [365, 120]
     );
-    doc.subheading("Trazabilidad de factores");
-    doc.bullets([
-      `Alcance 1: ${state.footprint.scope1_factor_source ?? "N/D"}`,
-      `Electricidad: ${state.footprint.scope2_elec_source ?? "N/D"}`,
-      `Calor / vapor: ${state.footprint.scope2_heat_source ?? "N/D"}`,
-      ...(state.footprint.scope2_notes ?? []),
-      ...(state.footprint.scope2_errors ?? []),
-    ]);
+    doc.subheading("Resumen por fuente");
+    doc.table(["Fuente", "Consumo", "Emisión"], sourceSummaryRows(state), [165, 170, 150]);
   } else {
     doc.paragraph("La huella todavía no está calculada en la aplicación. Esta sección queda pendiente.");
   }
