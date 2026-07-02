@@ -2116,12 +2116,14 @@ def optimize_portfolio(
         df["npv_norm"] = norm(df["npv_eur"].values)
         df["co2_norm"] = norm(df["annual_co2_reduction_t"].values)
         df["strategy_norm"] = norm(df["strategic_score_1_5"].values)
+        inclusion_bonus = 1e-6
         model += pulp.lpSum(
             variables[i]
             * (
                 float(w_npv) * float(df.loc[df["id"].astype(str) == i, "npv_norm"].iloc[0])
                 + float(w_co2) * float(df.loc[df["id"].astype(str) == i, "co2_norm"].iloc[0])
                 + float(w_strategy) * float(df.loc[df["id"].astype(str) == i, "strategy_norm"].iloc[0])
+                + inclusion_bonus
             )
             for i in ids
         )
